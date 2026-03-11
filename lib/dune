@@ -1,0 +1,13 @@
+(library
+ (name eprol_compiler_lib)
+ (modules ast location lexer parser
+          name_transform code_gen)
+ (libraries menhirLib))
+
+
+; Tell dune to use ocamllex to generate lexer.ml from lexer.mll
+(ocamllex lexer)
+
+; Tell dune to use menhir to generate parser.ml and parser.mli from parser.mly
+(menhir
+ (modules parser))

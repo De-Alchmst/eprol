@@ -1,0 +1,5 @@
+(executable
+ (public_name eprol)
+ (name main)
+ (modules main)
+ (libraries eprol_compiler_lib))
