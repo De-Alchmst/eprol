@@ -42,10 +42,13 @@ rule tokenize = parse
   | "GIVE"     { GIVE (mk_loc lexbuf) }
   | "VAR"      { VAR (mk_loc lexbuf) }
   | "CONST"    { CONST (mk_loc lexbuf) }
+  | "STATIC"   { STATIC (mk_loc lexbuf) }
   | "ACCESSOR" { ACCESSOR (mk_loc lexbuf) }
+  | "ENUM"     { ENUM (mk_loc lexbuf) }
   | "RECORD"   { RECORD (mk_loc lexbuf) }
   | "EXTENDS"  { EXTENDS (mk_loc lexbuf) }
   | "EXPORT"   { EXPORT (mk_loc lexbuf) }
+  | "USE"      { USE (mk_loc lexbuf) }
   | "IMPORT"   { IMPORT (mk_loc lexbuf) }
   | "AS"       { AS (mk_loc lexbuf) }
   | "NOT"      { NOT (mk_loc lexbuf) }
