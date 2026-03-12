@@ -1,4 +1,4 @@
-type location = {
+type loc = {
   file: string;
   line: int;
   column: int;
@@ -6,15 +6,15 @@ type location = {
 
 type error = {
   message: string;
-  location: location;
+  loc: loc;
 }
 
-let print_location loc =
+let print_loc loc =
   Printf.sprintf "%s:%d:%d" loc.file loc.line loc.column
 
 let found_errors : error list ref = ref []
 
 let report_error loc msg =
-  found_errors := { location = loc; message = msg } :: !found_errors;
+  found_errors := { loc = loc; message = msg } :: !found_errors;
   (* Print immediately so the user sees errors in order *)
-  Printf.eprintf "%s: error: %s\n" (print_location loc) msg
+  Printf.eprintf "%s: error: %s\n" (print_loc loc) msg

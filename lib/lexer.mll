@@ -1,19 +1,29 @@
 {
   open Parser
   open Location
+  exception LexError of string
+
+  let in_debug = ref false
+  let dummy_loc = { file = "<unknown>"; line = 0; column = 0 }
+
   let mk_loc lexbuf =
-    let s = Lexing.lexeme_start_p lexbuf in
-    {
-      file   = p.pos_fname;
-      line   = s.pos_lnum;
-      column = s.pos_cnum - s.pos_bol;
-    }
+    if not !in_debug then
+      let s = Lexing.lexeme_start_p lexbuf in
+      {
+        file   = s.pos_fname;
+        line   = s.pos_lnum;
+        column = s.pos_cnum - s.pos_bol;
+      }
+    else
+      dummy_loc
+
+  (* another block after tokenize *)
 }
 
 
 let whitespace = [' ' '\t' '\r']
 let digit = ['0'-'9']
-let letter = ['a'-'z' 'A'-'Z'] (* TODO: allow unicode in IDENT *)
+let letter = ['a'-'z' 'A'-'Z' '_'] (* TODO: allow unicode in IDENT *)
 
 rule tokenize = parse
   | whitespace+  { tokenize lexbuf }
@@ -63,6 +73,19 @@ rule tokenize = parse
   | "TRUE"     { TRUE (mk_loc lexbuf) }
   | "FALSE"    { FALSE (mk_loc lexbuf) }
 
+  | (['i' 'I' 'f' 'F' 'u' 'U' 's' 'S']("8"|"16"|"32"|"64")) as t
+    { TYPE (mk_loc lexbuf, String.lowercase_ascii t) }
+
+  | digit+ as n                       { INT (mk_loc lexbuf, int_of_string n) }
+  | (letter ( letter | digit )*) as i { IDENT (mk_loc lexbuf, i) }
+  (* all 3.7, 3. and .7 are valid floats *)
+  | ((digit+ '.' digit*) | ('.' digit+)) as f
+    { FLOAT (mk_loc lexbuf, float_of_string f) }
+
+  (* strip quotes from match *)
+  | ('"' ([^'"'] | "\\\"" )* '"') as str
+      { STRING (mk_loc lexbuf, String.sub str 1 ((String.length str) - 2)) }
+
   | ';'  { SEMICOLON (mk_loc lexbuf) }
   | '.'  { PERIOD (mk_loc lexbuf) }
   | ','  { COMMA (mk_loc lexbuf) }
@@ -89,19 +112,22 @@ rule tokenize = parse
   | ">=" { GEQ (mk_loc lexbuf) }
   | ":=" { ASSIGN (mk_loc lexbuf) }
 
-  | (['i' 'I' 'f' 'F' 'u' 'U' 's' 'S']("8"|"16"|"32"|"64")) as t
-    { TYPE (mk_loc lexbuf, String.lowercase_ascii t) }
-
-  | digit+ as n                { INT (mk_loc lexbuf, int_of_string n) }
-  | letter ( letter | digit )* { IDENT (mk_loc lexbuf, Lexing.lexeme lexbuf) }
-  (* all 3.7, 3. and .7 are valid floats *)
-  | ((digit+ '.' digit*) | ('.' digit+)) as f
-    { FLOAT (mk_loc lexbuf, float_of_string f) }
-
   | eof { EOF (mk_loc lexbuf) }
 
   | _ as c {
-    report_error (mk_loc lexbuf)
-                 (Printf.sprintf "Unexpected character: '%c'" c);
-    token lexbuf (* skip unexpected character *)
+    if not !in_debug then
+      begin
+        report_error (mk_loc lexbuf)
+                     (Printf.sprintf "Unexpected character: '%c'" c);
+        tokenize lexbuf (* skip unexpected character *)
+      end
+    else
+      raise (LexError (Printf.sprintf "Unexpected character: %c" c))
   }
+
+
+{
+  let tokenize_debug lexbuf =
+    in_debug := true;
+    tokenize lexbuf
+}
