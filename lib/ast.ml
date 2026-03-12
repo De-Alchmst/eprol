@@ -12,7 +12,7 @@ and binop =
   | Mul  of loc * bool * bool
   | Div  of loc * bool * bool
   | Mod  of loc * bool * bool
-  | Eq   of loc * bool * bool (* is not affected by signess, but keeping it for consistency *)
+  | Eq   of loc * bool * bool
   | Neq  of loc * bool * bool
   | Lt   of loc * bool * bool
   | Gt   of loc * bool * bool

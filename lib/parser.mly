@@ -64,6 +64,10 @@ stmt:
 
 
 expr:
+  (* cannot be factored, because percedence *)
+  | b = binops_and_the_like
+    { b }
+
   | i = INT
     { match i with | (l, v) -> Lit (LitInt (l, v)) }
   | f = FLOAT
@@ -72,6 +76,7 @@ expr:
     { match s with | (l, v) -> Lit (LitString (l, v)) }
   | i = idnt
     { match i with | (l, v) -> Var (l, v) }
+
 
 idnt:
   (* accumulate strings of leading idents until the last one is the base *)
@@ -82,3 +87,116 @@ idnt:
                                                  namespace = (List.rev acc) }))
         | i :: rest -> aux ((match i with | (_, s) -> s) :: acc) rest
       in aux [] names }
+
+binops_and_the_like:
+  | e1 = expr; op = PLUS; e2 = expr
+    { Binop (Add (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = PLUS; e2 = expr
+    { Binop (Add (op, true, false), e1, e2) }
+  | e1 = expr; op = PLUS; PERIOD; e2 = expr
+    { Binop (Add (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = PLUS; PERIOD; e2 = expr
+    { Binop (Add (op, true, true), e1, e2) }
+
+  | e1 = expr; op = MINUS; e2 = expr
+    { Binop (Sub (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = MINUS; e2 = expr
+    { Binop (Sub (op, true, false), e1, e2) }
+  | e1 = expr; op = MINUS; PERIOD; e2 = expr
+    { Binop (Sub (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = MINUS; PERIOD; e2 = expr
+    { Binop (Sub (op, true, true), e1, e2) }
+
+  | e1 = expr; op = STAR; e2 = expr
+    { Binop (Mul (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = STAR; e2 = expr
+    { Binop (Mul (op, true, false), e1, e2) }
+  | e1 = expr; op = STAR; PERIOD; e2 = expr
+    { Binop (Mul (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = STAR; PERIOD; e2 = expr
+    { Binop (Mul (op, true, true), e1, e2) }
+
+  | e1 = expr; op = SLASH; e2 = expr
+    { Binop (Div (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = SLASH; e2 = expr
+    { Binop (Div (op, true, false), e1, e2) }
+  | e1 = expr; op = SLASH; PERIOD; e2 = expr
+    { Binop (Div (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = SLASH; PERIOD; e2 = expr
+    { Binop (Div (op, true, true), e1, e2) }
+
+  | e1 = expr; op = PERCENT; e2 = expr
+    { Binop (Mod (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = PERCENT; e2 = expr
+    { Binop (Mod (op, true, false), e1, e2) }
+  | e1 = expr; op = PERCENT; PERIOD; e2 = expr
+    { Binop (Mod (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = PERCENT; PERIOD; e2 = expr
+    { Binop (Mod (op, true, true), e1, e2) }
+
+  | e1 = expr; op = EQ; e2 = expr
+    { Binop (Eq (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = EQ; e2 = expr
+    { Binop (Eq (op, true, false), e1, e2) }
+  | e1 = expr; op = EQ; PERIOD; e2 = expr
+    { Binop (Eq (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = EQ; PERIOD; e2 = expr
+    { Binop (Eq (op, true, true), e1, e2) }
+
+  | e1 = expr; op = NEQ; e2 = expr
+    { Binop (Neq (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = NEQ; e2 = expr
+    { Binop (Neq (op, true, false), e1, e2) }
+  | e1 = expr; op = NEQ; PERIOD; e2 = expr
+    { Binop (Neq (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = NEQ; PERIOD; e2 = expr
+    { Binop (Neq (op, true, true), e1, e2) }
+
+  | e1 = expr; op = LT; e2 = expr
+    { Binop (Lt (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = LT; e2 = expr
+    { Binop (Lt (op, true, false), e1, e2) }
+  | e1 = expr; op = LT; PERIOD; e2 = expr
+    { Binop (Lt (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = LT; PERIOD; e2 = expr
+    { Binop (Lt (op, true, true), e1, e2) }
+
+  | e1 = expr; op = GT; e2 = expr
+    { Binop (Gt (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = GT; e2 = expr
+    { Binop (Gt (op, true, false), e1, e2) }
+  | e1 = expr; op = GT; PERIOD; e2 = expr
+    { Binop (Gt (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = GT; PERIOD; e2 = expr
+    { Binop (Gt (op, true, true), e1, e2) }
+
+  | e1 = expr; op = LEQ; e2 = expr
+    { Binop (Leq (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = LEQ; e2 = expr
+    { Binop (Leq (op, true, false), e1, e2) }
+  | e1 = expr; op = LEQ; PERIOD; e2 = expr
+    { Binop (Leq (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = LEQ; PERIOD; e2 = expr
+    { Binop (Leq (op, true, true), e1, e2) }
+
+  | e1 = expr; op = GEQ; e2 = expr
+    { Binop (Geq (op, false, false), e1, e2) }
+  | e1 = expr; PERIOD; op = GEQ; e2 = expr
+    { Binop (Geq (op, true, false), e1, e2) }
+  | e1 = expr; op = GEQ; PERIOD; e2 = expr
+    { Binop (Geq (op, false, true), e1, e2) }
+  | e1 = expr; PERIOD; op = GEQ; PERIOD; e2 = expr
+    { Binop (Geq (op, true, true), e1, e2) }
+
+  | e1 = expr; op = AND; e2 = expr
+    { Binop (And op, e1, e2) }
+  | e1 = expr; op = OR; e2 = expr
+    { Binop (Or op, e1, e2) }
+  | e1 = expr; op = XOR; e2 = expr
+    { Binop (Xor op, e1, e2) }
+  | e1 = expr; op = NAND; e2 = expr
+    { Binop (Nand op, e1, e2) }
+  | e1 = expr; op = NOR; e2 = expr
+    { Binop (Nor op, e1, e2) }
+  | e1 = expr; op = NXOR; e2 = expr
+    { Binop (Nxor op, e1, e2) }

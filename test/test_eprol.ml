@@ -54,6 +54,19 @@ let tests = [
    [
      Assign (dl, { name = "x"; namespace = [] }, Lit (LitInt (dl, 42)))
    ]);
+  ("binops",
+   "1 + 2 .* 3 -. 4 ./. 5",
+   [
+     Expr (Binop (Sub (dl, false, true),
+                  Binop (Add (dl, false, false),
+                         Lit (LitInt (dl, 1)),
+                         Binop (Mul (dl, true, false),
+                                Lit (LitInt (dl, 2)),
+                                Lit (LitInt (dl, 3)))),
+                  Binop (Div (dl, true, true),
+                         Lit (LitInt (dl, 4)),
+                         Lit (LitInt (dl, 5)))))
+   ]);
 ]
 
 
