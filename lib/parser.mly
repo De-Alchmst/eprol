@@ -43,19 +43,19 @@ debug_prog:
     a, SEMICOLON as a statement separator
     b, not required after END
     b, allow leading/trailing/repeating SEMICOLON
-  *)
+*)
 stmt_list:
-  | list(SEMICOLON); lst = stmt_chain; list(SEMICOLON)
-    { lst }
+  | list(SEMICOLON); lst = option(stmt_chain); list(SEMICOLON)
+    { match lst with
+      | Some chain -> chain
+      | None -> [] }
 
-  | list(SEMICOLON)
-    { [] }
 
 stmt_chain:
-  | s = stmt; nonempty_list(SEMICOLON); rest = stmt_list
+  | s = stmt; nonempty_list(SEMICOLON); rest = stmt_chain
     { s :: rest}
 
-  | s = control_block; list(SEMICOLON); rest = stmt_list
+  | s = control_block; list(SEMICOLON); rest = stmt_chain
     { s :: rest }
 
   | s = stmt; list(SEMICOLON)
@@ -63,7 +63,6 @@ stmt_chain:
 
   | s = control_block; list(SEMICOLON)
     { [s] }
-
 
 stmt:
   | e = expr

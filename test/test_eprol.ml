@@ -67,13 +67,14 @@ let tests = [
                          Lit (LitInt (dl, 5)))))
    ]);
    ("blocks and semicolons",
-    "37; LOOP ;1; 4 END LOOP DO 1; LOOP END; END",
+    "37; LOOP ;1; 4 END LOOP DO 1; LOOP END; 4 END",
     [
       Expr (Lit (LitInt (dl, 37)));
       Loop (dl, [Expr (Lit (LitInt (dl, 1)));
                  Expr (Lit (LitInt (dl, 4)))]);
       Loop (dl, [Expr (Lit (LitInt (dl, 1)));
-                 Loop (dl, [])]);
+                 Loop (dl, []);
+                 Expr (Lit (LitInt (dl, 4)))]);
 
     ]);
 ]
