@@ -84,7 +84,7 @@ stmt:
   | i = idnt; ASSIGN; e = expr
     { match i with | (l, v) -> Assign (l, v, e) }
 
-  | r = RETURN; e = expr { Return (r, e) }
+  | r = RETURN; e = option(expr) { Return (r, e) }
   | g = GIVE; e = expr { Give (g, e) }
   | b = BREAK { Break b }
   | n = NEXT { Next n }

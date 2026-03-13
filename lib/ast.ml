@@ -77,7 +77,7 @@ and stmt =
   (* case, [[of,,,], body]*)
   | Case   of loc * expr * (expr list * stmt list) list
   | Return of loc * expr option
-  | Give   of loc * expr option
+  | Give   of loc * expr
   | Break  of loc
   | Next   of loc
   | ToplevelDbg of top_level_stmt
