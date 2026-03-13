@@ -85,7 +85,8 @@ let tests = [
      ]);
     ("for loop",
       "FOR i FROM 0 TO 10 STEP 2 DO 1 END
-       FOR i FROM 10 DOWNTO 0 DO 1 END",
+       FOR i FROM 10 DOWNTO 0 DO 1 END
+       FOR i FROM 0 UNTIL i >= 20 STEP 2 DO 1 END",
       [
         (For (dl, { name = "i"; namespace = [] },
               Lit (LitInt (dl, 0)),
@@ -101,6 +102,14 @@ let tests = [
                      (Var (dl, { name = "i"; namespace = [] })),
                      (Lit (LitInt (dl, 0))))),
               Lit (LitInt (dl, -1)),
+              [Expr (Lit (LitInt (dl, 1)))]));
+
+        (For (dl, { name = "i"; namespace = [] },
+              Lit (LitInt (dl, 0)),
+              Binop ((Geq (dl, false, false),
+                     (Var (dl, { name = "i"; namespace = [] })),
+                     (Lit (LitInt (dl, 20))))),
+              Lit (LitInt (dl, 2)),
               [Expr (Lit (LitInt (dl, 1)))]));
       ]);
 ]

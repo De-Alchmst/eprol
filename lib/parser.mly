@@ -92,17 +92,25 @@ control_block:
     (* separate iteration variable *)
     { match i with | (il, iv) ->
       (* separate upto into comparator step, left side of exp*)
-      match upto with | (cmp, to_stp, to_e)
-        -> For (f, iv, from_e, (* loc, var_data, initial value *)
-                (Binop (cmp, (Var (il, iv)), to_e)), (* until *)
-                (* either use provided step, or TO default *)
-                (match step with
-                   | Some step_e -> step_e
-                   | None -> Lit (LitInt (il, to_stp))),
-                stmts)
+      match upto with | (cmp, to_stp, to_e) ->
+      For (f, iv, from_e, (* loc, var_data, initial value *)
+           (Binop (cmp, (Var (il, iv)), to_e)), (* until *)
+           (* either use provided step, or TO default *)
+           (match step with
+              | Some step_e -> step_e
+              | None -> Lit (LitInt (il, to_stp))),
+           stmts)
     }
 
-    (* FOR with UNTIL *)
+  (* FOR with UNTIL *)
+  | f = FOR; i = idnt; FROM; from_e = expr; UNTIL; until_e = expr; 
+    step = option(for_step); DO; stmts = stmt_list; END
+   { match i with | (il, iv) ->
+     For (f, iv, from_e, until_e,
+          (match step with
+             | Some step_e -> step_e
+             | None -> Lit (LitInt (il, 1))),
+          stmts) }
 
 
 for_to:
