@@ -66,52 +66,62 @@ let tests = [
                          Lit (LitInt (dl, 4)),
                          Lit (LitInt (dl, 5)))))
    ]);
-   ("blocks and semicolons",
-    "37; LOOP ;1; 4 END LOOP DO 1; LOOP END; 4 END",
+  ("blocks and semicolons",
+   "37; LOOP ;1; 4 END LOOP DO 1; LOOP END; 4 END",
+   [
+     Expr (Lit (LitInt (dl, 37)));
+     Loop (dl, [Expr (Lit (LitInt (dl, 1)));
+                Expr (Lit (LitInt (dl, 4)))]);
+     Loop (dl, [Expr (Lit (LitInt (dl, 1)));
+                Loop (dl, []);
+                Expr (Lit (LitInt (dl, 4)))]);
+   ]);
+  ("while loop",
+   "WHILE 1 DO 2; 3 END",
+   [
+     While (dl, Lit (LitInt (dl, 1)),
+           [Expr (Lit (LitInt (dl, 2)));
+            Expr (Lit (LitInt (dl, 3)))])
+   ]);
+  ("for loop",
+    "FOR i FROM 0 TO 10 STEP 2 DO 1 END
+     FOR i FROM 10 DOWNTO 0 DO 1 END
+     FOR i FROM 0 UNTIL i >= 20 STEP 2 DO 1 END",
     [
-      Expr (Lit (LitInt (dl, 37)));
-      Loop (dl, [Expr (Lit (LitInt (dl, 1)));
-                 Expr (Lit (LitInt (dl, 4)))]);
-      Loop (dl, [Expr (Lit (LitInt (dl, 1)));
-                 Loop (dl, []);
-                 Expr (Lit (LitInt (dl, 4)))]);
+      (For (dl, { name = "i"; namespace = [] },
+            Lit (LitInt (dl, 0)),
+            Binop ((Lt (dl, false, false),
+                   (Var (dl, { name = "i"; namespace = [] })),
+                   (Lit (LitInt (dl, 10))))),
+            Lit (LitInt (dl, 2)),
+            [Expr (Lit (LitInt (dl, 1)))]));
+
+      (For (dl, { name = "i"; namespace = [] },
+            Lit (LitInt (dl, 10)),
+            Binop ((Gt (dl, false, false),
+                   (Var (dl, { name = "i"; namespace = [] })),
+                   (Lit (LitInt (dl, 0))))),
+            Lit (LitInt (dl, -1)),
+            [Expr (Lit (LitInt (dl, 1)))]));
+
+      (For (dl, { name = "i"; namespace = [] },
+            Lit (LitInt (dl, 0)),
+            Binop ((Geq (dl, false, false),
+                   (Var (dl, { name = "i"; namespace = [] })),
+                   (Lit (LitInt (dl, 20))))),
+            Lit (LitInt (dl, 2)),
+            [Expr (Lit (LitInt (dl, 1)))]));
     ]);
-   ("while loop",
-    "WHILE 1 DO 2; 3 END",
-    [
-      While (dl, Lit (LitInt (dl, 1)),
-            [Expr (Lit (LitInt (dl, 2)));
-             Expr (Lit (LitInt (dl, 3)))])
-     ]);
-    ("for loop",
-      "FOR i FROM 0 TO 10 STEP 2 DO 1 END
-       FOR i FROM 10 DOWNTO 0 DO 1 END
-       FOR i FROM 0 UNTIL i >= 20 STEP 2 DO 1 END",
-      [
-        (For (dl, { name = "i"; namespace = [] },
-              Lit (LitInt (dl, 0)),
-              Binop ((Lt (dl, false, false),
-                     (Var (dl, { name = "i"; namespace = [] })),
-                     (Lit (LitInt (dl, 10))))),
-              Lit (LitInt (dl, 2)),
-              [Expr (Lit (LitInt (dl, 1)))]));
-
-        (For (dl, { name = "i"; namespace = [] },
-              Lit (LitInt (dl, 10)),
-              Binop ((Gt (dl, false, false),
-                     (Var (dl, { name = "i"; namespace = [] })),
-                     (Lit (LitInt (dl, 0))))),
-              Lit (LitInt (dl, -1)),
-              [Expr (Lit (LitInt (dl, 1)))]));
-
-        (For (dl, { name = "i"; namespace = [] },
-              Lit (LitInt (dl, 0)),
-              Binop ((Geq (dl, false, false),
-                     (Var (dl, { name = "i"; namespace = [] })),
-                     (Lit (LitInt (dl, 20))))),
-              Lit (LitInt (dl, 2)),
-              [Expr (Lit (LitInt (dl, 1)))]));
-      ]);
+  ("procedure calls",
+   "foo.bar(1, 2 + 3, baz())",
+   [
+      Expr (Call (dl, { name = "bar"; namespace = ["foo"] },
+                  [Lit (LitInt (dl, 1));
+                   Binop (Add (dl, false, false),
+                           Lit (LitInt (dl, 2)),
+                           Lit (LitInt (dl, 3)));
+                   Call (dl, { name = "baz"; namespace = [] }, [])]))
+   ]);
 ]
 
 

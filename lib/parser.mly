@@ -125,6 +125,9 @@ expr:
   | b = binops_and_the_like
     { b }
 
+  | i = idnt; LROUND; args = separated_list(COMMA, expr); RROUND
+    { match i with | (l, v) -> Call (l, v, args) }
+
   | i = INT
     { match i with | (l, v) -> Lit (LitInt (l, v)) }
   | f = FLOAT
