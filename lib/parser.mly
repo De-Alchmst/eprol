@@ -41,18 +41,28 @@ debug_prog:
 
 (* all this weird separation to have:
     a, SEMICOLON as a statement separator
-    b, not require it after END
-    b, allow trailing/repeating SEMICOLON
+    b, not required after END
+    b, allow leading/trailing/repeating SEMICOLON
   *)
 stmt_list:
-  | first = stmt; lst = list(separated_stmt)
-    { first :: lst }
+  | list(SEMICOLON); lst = stmt_chain; list(SEMICOLON)
+    { lst }
 
-separated_stmt:
-  | nonempty_list(SEMICOLON); s = stmt
-    { s }
-  | nonempty_list(SEMICOLON)
-    { EmptyStmt }
+  | list(SEMICOLON)
+    { [] }
+
+stmt_chain:
+  | s = stmt; nonempty_list(SEMICOLON); rest = stmt_list
+    { s :: rest}
+
+  | s = control_block; list(SEMICOLON); rest = stmt_list
+    { s :: rest }
+
+  | s = stmt; list(SEMICOLON)
+    { [s] }
+
+  | s = control_block; list(SEMICOLON)
+    { [s] }
 
 
 stmt:
@@ -63,8 +73,12 @@ stmt:
     { match i with | (l, v) -> Assign (l, v, e) }
 
 
+control_block:
+  | l = LOOP; option(DO); stmts = stmt_list; END
+    { Loop (l, stmts) }
+
+
 expr:
-  (* cannot be factored, because percedence *)
   | b = binops_and_the_like
     { b }
 
@@ -89,6 +103,8 @@ idnt:
       in aux [] names }
 
 binops_and_the_like:
+  (* cannot be factored, because percedence *)
+  (* sad... *)
   | e1 = expr; op = PLUS; e2 = expr
     { Binop (Add (op, false, false), e1, e2) }
   | e1 = expr; PERIOD; op = PLUS; e2 = expr

@@ -33,14 +33,13 @@ let run_test name input expected =
 
 let tests = [
   ("basic literals",
-   "37; 3.7; 3.; .7; \"Hello\";",
+   ";37; 3.7; 3.;;; .7; \"Hello\";;;",
    [
      Expr (Lit (LitInt    (dl, 37     )));
      Expr (Lit (LitFloat  (dl, 3.7    )));
      Expr (Lit (LitFloat  (dl, 3.0    )));
      Expr (Lit (LitFloat  (dl, 0.7    )));
      Expr (Lit (LitString (dl, "Hello")));
-     EmptyStmt
    ]);
   ("idents",
    "foo; foo.bar; foo.bar.baz",
@@ -67,6 +66,16 @@ let tests = [
                          Lit (LitInt (dl, 4)),
                          Lit (LitInt (dl, 5)))))
    ]);
+   ("blocks and semicolons",
+    "37; LOOP ;1; 4 END LOOP DO 1; LOOP END; END",
+    [
+      Expr (Lit (LitInt (dl, 37)));
+      Loop (dl, [Expr (Lit (LitInt (dl, 1)));
+                 Expr (Lit (LitInt (dl, 4)))]);
+      Loop (dl, [Expr (Lit (LitInt (dl, 1)));
+                 Loop (dl, [])]);
+
+    ]);
 ]
 
 
