@@ -72,6 +72,7 @@ rule tokenize = parse
   | "TRUE"     { TRUE (mk_loc lexbuf) }
   | "FALSE"    { FALSE (mk_loc lexbuf) }
 
+  (* TODO: v128, funcref *)
   | (['i' 'I' 'f' 'F' 'u' 'U' 's' 'S']("8"|"16"|"32"|"64")) as t
     { TYPE (mk_loc lexbuf, String.lowercase_ascii t) }
 

@@ -27,7 +27,7 @@
 %left PLUS MINUS
 %left STAR SLASH PERCENT
 
-(* %start <Ast.program> prog *)
+%start <Ast.program> prog
 %start <Ast.dbg_program> debug_prog
 %%
 
@@ -35,9 +35,21 @@ debug_prog:
   | stmts = stmt_list; EOF
     { stmts }
 
-(* prog: *)
-(*   | stmts = list(top_level_stmt); EOF *)
-(*     { stmts } *)
+  | stmts = nonempty_list(top_level_stmt); EOF
+    { stmts |> List.map (fun stmt -> ToplevelDbg stmt) }
+
+prog:
+  | stmts = list(top_level_stmt); EOF
+    { stmts }
+
+
+top_level_stmt:
+  | i = IMPORT; names = nonempty_list(STRING); AS; idnt = idnt_namespace;
+    typ = import_type
+    { Import (i, names |> List.map (function | (_, s) -> s), idnt, typ) }
+
+  | v = VAR; nmsp = option(namespace); decls = decl_block_list; END
+    { VarDecl (v, (match nmsp with | Some n -> n | None -> []), decls) }
 
 
 (* all this weird separation to have:
@@ -134,6 +146,50 @@ if_else:
      { body }
 
 
+import_type:
+  | w = wtype
+    { w }
+
+wtype:
+  | t = TYPE
+    { match t with
+      | (l, "i8")  -> I8  l | (l, "u8")  -> U8  l | (l, "s8")  -> S8  l
+      | (l, "i16") -> I16 l | (l, "u16") -> U16 l | (l, "s16") -> S16 l
+      | (l, "i32") -> I32 l | (l, "u32") -> U32 l | (l, "s32") -> S32 l
+      | (l, "i64") -> I64 l | (l, "u64") -> U64 l | (l, "s64") -> S64 l
+      | (l, "f32") -> F32 l | (l, "f64") -> F64 l
+      | _ -> failwith "invalid type"
+    }
+
+
+decl_block_list:
+  | l = nonempty_list(decl_block)
+    { l }
+
+decl_block:
+  | w = wtype; l = decl_stmt_chain
+    { (w, l) }
+
+decl_stmt_chain:
+      | s = decl_stmt; COMMA; rest = decl_stmt_chain
+        { s :: rest }
+
+      | s = decl_stmt; option(COMMA)
+        { [s] }
+
+decl_stmt:
+  | i = IDENT; a = option(assign); ex = option(export)
+    { match i with | (l, v) -> (l, v, a, ex) }
+
+assign:
+  | ASSIGN; e = expr
+    { e }
+
+export:
+  | EXPORT; s = STRING
+    { match s with | (_, s) -> s }
+
+
 expr:
   | b = binops_and_the_like
     { b }
@@ -160,6 +216,18 @@ idnt:
                                                  namespace = (List.rev acc) }))
         | i :: rest -> aux ((match i with | (_, s) -> s) :: acc) rest
       in aux [] names }
+
+idnt_namespace:
+  | i = IDENT; n = option(namespace)
+    { match i with | (l, s) ->
+        match n with
+        | Some n -> (l, { name = s; namespace = n })
+        | None -> (l, { name = s; namespace = [] }) }
+
+namespace:
+  | COLON; i = separated_nonempty_list(PERIOD, IDENT)
+    { i |> List.map (function | (_, s) -> s) }
+
 
 binops_and_the_like:
   (* cannot be factored, because percedence *)

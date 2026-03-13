@@ -142,6 +142,30 @@ let tests = [
           [],
           [Expr (Lit (LitInt (dl, 7)))]));
    ]);
+  ("import statement",
+   "IMPORT \"foo\" \"bar\" AS bar : foo I32",
+    [
+      ToplevelDbg (Import (dl, ["foo"; "bar"],
+                           (dl, { name = "bar"; namespace = ["foo"] }),
+                           (I32 dl)))
+    ]);
+   ("global variable declaration",
+    "VAR : foo i32 a := 3, b := 7 f64 c := 3.14 EXPORT \"PI\", END
+     VAR u8 d END",
+    [
+      (ToplevelDbg (VarDecl
+                     (dl, ["foo"],
+                      [((I32 dl),
+                        [(dl, "a", (Some (Lit (LitInt (dl, 3)))), None);
+                         (dl, "b", (Some (Lit (LitInt (dl, 7)))), None)]);
+                       ((F64 dl),
+                         [(dl, "c", (Some (Lit (LitFloat (dl, 3.14)))), Some "PI")])
+                      ])));
+      (ToplevelDbg (VarDecl
+                     (dl, [],
+                      [((U8 dl),
+                        [(dl, "d", None, None)])])));
+    ]);
 ]
 
 

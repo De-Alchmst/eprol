@@ -31,7 +31,7 @@ and unop =
   | Bool  of loc
   | Nbool of loc
 
-and ttype =
+and wtype =
   | Void
   | I8  of loc | U8  of loc | S8  of loc
   | I16 of loc | U16 of loc | S16 of loc
@@ -44,6 +44,10 @@ and literal =
   | LitFloat  of loc * float
   | LitString of loc * string
 
+(* var_data, name, init value, export name *)
+and var_decl = loc * string * expr option * string option
+and var_decl_block = wtype * var_decl list
+
 and expr =
   | Var    of loc * var_data
   | Lit    of literal
@@ -51,12 +55,12 @@ and expr =
   | Unop   of unop * expr
   | Call   of loc * var_data * expr list
   (* ttype, type, if, body, [elif, body], [body] *)
-  | If     of loc * ttype * expr * stmt list * (loc * expr * stmt list) list * stmt list
-  (* type, case, [[of,,,], body]*)
-  | Case   of loc * ttype * expr * (expr list * stmt list) list
+  | If     of loc * wtype * expr * stmt list * (loc * expr * stmt list) list * stmt list
+  (* type, case, [[of,,,], body] *)
+  | Case   of loc * wtype * expr * (expr list * stmt list) list
   | Block  of loc * stmt list
   (* addr, index, type, in_bytes? *)
-  | Access of loc * expr * expr * ttype * bool
+  | Access of loc * expr * expr * wtype * bool
 
 and stmt =
   | EmptyStmt
@@ -64,10 +68,10 @@ and stmt =
   | Assign of loc * var_data * expr
   | Loop   of loc * stmt list
   | While  of loc * expr * stmt list
-  (* var, from, until, step , body*)
+  (* var, from, until, step , body *)
   | For    of loc * var_data * expr * expr * expr * stmt list
   (* var, in, of *)
-  | ForOf  of loc * var_data * expr * ttype * stmt list
+  | ForOf  of loc * var_data * expr * wtype * stmt list
   (* if, body, [elif, body], [body] *)
   | If     of loc * expr * stmt list * (loc * expr * stmt list) list * stmt list
   (* case, [[of,,,], body]*)
@@ -76,12 +80,13 @@ and stmt =
   | Give   of loc * expr option
   | Break  of loc
   | Next   of loc
+  | ToplevelDbg of top_level_stmt
 
 and top_level_stmt =
   (* name/namespace, args, returnType, locals, body *)
-  | Proc of loc * var_data * var_data list * ttype * (loc * var_data) list * stmt list
-  | GlobalVar of loc * (loc * var_data * expr) list
-  | Import of string list * var_data
+  | Proc of loc * var_data * var_data list * wtype * (loc * var_data) list * stmt list
+  | VarDecl of loc * string list * var_decl_block list
+  | Import of loc * string list * (loc * var_data) * wtype
 
 and program = top_level_stmt list
 and dbg_program = stmt list
