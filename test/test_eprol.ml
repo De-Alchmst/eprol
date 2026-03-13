@@ -122,6 +122,26 @@ let tests = [
                            Lit (LitInt (dl, 3)));
                    Call (dl, { name = "baz"; namespace = [] }, [])]))
    ]);
+  ("if statements",
+   "IF 1 DO 2;3 END 
+    IF 1 DO ELIF 2 DO 3 ELIF 4 DO 5 ELSE 6 END
+    IF 1 DO 3 ELSE DO 7 END",
+   [
+     (If (dl, Lit (LitInt (dl, 1)),
+          [Expr (Lit (LitInt (dl, 2)));
+           Expr (Lit (LitInt (dl, 3)))],
+          [],
+          []));
+     (If (dl, Lit (LitInt (dl, 1)),
+          [],
+          [(dl, (Lit (LitInt (dl, 2))), [Expr (Lit (LitInt (dl, 3)))]);
+           (dl, (Lit (LitInt (dl, 4))), [Expr (Lit (LitInt (dl, 5)))])],
+          [Expr (Lit (LitInt (dl, 6)))]));
+     (If (dl, Lit (LitInt (dl, 1)),
+          [Expr (Lit (LitInt (dl, 3)))],
+          [],
+          [Expr (Lit (LitInt (dl, 7)))]));
+   ]);
 ]
 
 

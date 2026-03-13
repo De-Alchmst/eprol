@@ -46,7 +46,7 @@ debug_prog:
     b, allow leading/trailing/repeating SEMICOLON
 *)
 stmt_list:
-  | list(SEMICOLON); lst = option(stmt_chain); list(SEMICOLON)
+  | list(SEMICOLON); lst = option(stmt_chain)
     { match lst with
       | Some chain -> chain
       | None -> [] }
@@ -85,6 +85,10 @@ control_block:
   | w = WHILE; e = expr; DO; s = stmt_list; END
     { While (w, e, s) }
 
+  | i = IF; cond = expr; DO; body = stmt_list; elifs = list(if_elif);
+    els = option(if_else); END
+    { If (i, cond, body, elifs, match els with | Some els -> els | None -> []) }
+
   (* FOR with TO or DOWNTO *)
   | f = FOR; i = idnt; FROM; from_e = expr; upto = for_to;
     step = option(for_step); DO; stmts = stmt_list; END
@@ -110,7 +114,8 @@ control_block:
           (match step with
              | Some step_e -> step_e
              | None -> Lit (LitInt (il, 1))),
-          stmts) }
+          stmts)
+    }
 
 
 for_to:
@@ -119,6 +124,14 @@ for_to:
 
 for_step:
   | STEP; e = expr { e }
+
+if_elif:
+  | e = ELIF; cond = expr; DO; body = stmt_list
+    { (e, cond, body) }
+
+if_else:
+  | ELSE; option(DO); body = stmt_list
+     { body }
 
 
 expr:
