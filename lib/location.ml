@@ -9,6 +9,8 @@ type error = {
   loc: loc;
 }
 
+let dummy_loc = { file = "<unknown>"; line = 0; column = 0 }
+  
 let print_loc loc =
   Printf.sprintf "%s:%d:%d" loc.file loc.line loc.column
 

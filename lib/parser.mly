@@ -1,6 +1,7 @@
 (* This header section contains OCaml code included in the generated parser *)
 %{
   open Ast
+  open Location
 %}
 
 %token <Location.loc * string> IDENT
@@ -71,10 +72,45 @@ stmt:
   | i = idnt; ASSIGN; e = expr
     { match i with | (l, v) -> Assign (l, v, e) }
 
+  (* | r = RETURN; e = expr { Return (r, e) } *)
+  (* | g = GIVE; e = expr { Give (g, e) } *)
+  (* | b = BREAK { Break b } *)
+  (* | n = NEXT { Next n } *)
+
 
 control_block:
   | l = LOOP; option(DO); stmts = stmt_list; END
     { Loop (l, stmts) }
+
+  | w = WHILE; e = expr; DO; s = stmt_list; END
+    { While (w, e, s) }
+
+  (* FOR with TO or DOWNTO *)
+  | f = FOR; i = idnt; FROM; from_e = expr; upto = for_to;
+    step = option(for_step); DO; stmts = stmt_list; END
+
+    (* separate iteration variable *)
+    { match i with | (il, iv) ->
+      (* separate upto into comparator step, left side of exp*)
+      match upto with | (cmp, to_stp, to_e)
+        -> For (f, iv, from_e, (* loc, var_data, initial value *)
+                (Binop (cmp, (Var (il, iv)), to_e)), (* until *)
+                (* either use provided step, or TO default *)
+                (match step with
+                   | Some step_e -> step_e
+                   | None -> Lit (LitInt (il, to_stp))),
+                stmts)
+    }
+
+    (* FOR with UNTIL *)
+
+
+for_to:
+  | TO;     e = expr { ((Lt (dummy_loc, false, false)),  1, e) }
+  | DOWNTO; e = expr { ((Gt (dummy_loc, false, false)), -1, e) }
+
+for_step:
+  | STEP; e = expr { e }
 
 
 expr:

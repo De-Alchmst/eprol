@@ -4,7 +4,6 @@
   exception LexError of string
 
   let in_debug = ref false
-  let dummy_loc = { file = "<unknown>"; line = 0; column = 0 }
 
   let mk_loc lexbuf =
     if not !in_debug then

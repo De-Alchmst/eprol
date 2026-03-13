@@ -1,6 +1,6 @@
 open Eprol_compiler_lib
 open Ast
-open Lexer
+open Location
 
 let dl = dummy_loc
 
@@ -75,8 +75,34 @@ let tests = [
       Loop (dl, [Expr (Lit (LitInt (dl, 1)));
                  Loop (dl, []);
                  Expr (Lit (LitInt (dl, 4)))]);
-
     ]);
+   ("while loop",
+    "WHILE 1 DO 2; 3 END",
+    [
+      While (dl, Lit (LitInt (dl, 1)),
+            [Expr (Lit (LitInt (dl, 2)));
+             Expr (Lit (LitInt (dl, 3)))])
+     ]);
+    ("for loop",
+      "FOR i FROM 0 TO 10 STEP 2 DO 1 END
+       FOR i FROM 10 DOWNTO 0 DO 1 END",
+      [
+        (For (dl, { name = "i"; namespace = [] },
+              Lit (LitInt (dl, 0)),
+              Binop ((Lt (dl, false, false),
+                     (Var (dl, { name = "i"; namespace = [] })),
+                     (Lit (LitInt (dl, 10))))),
+              Lit (LitInt (dl, 2)),
+              [Expr (Lit (LitInt (dl, 1)))]));
+
+        (For (dl, { name = "i"; namespace = [] },
+              Lit (LitInt (dl, 10)),
+              Binop ((Gt (dl, false, false),
+                     (Var (dl, { name = "i"; namespace = [] })),
+                     (Lit (LitInt (dl, 0))))),
+              Lit (LitInt (dl, -1)),
+              [Expr (Lit (LitInt (dl, 1)))]));
+      ]);
 ]
 
 
