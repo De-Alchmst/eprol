@@ -54,7 +54,7 @@ top_level_stmt:
     { VarDecl (v, (nmsp |> Option.value ~default:[]), decls) }
 
   | c = CONST; nmsp = option(namespace); decls = const_decl_block; END
-    { VarDecl (v, (nmsp |> Option.value ~default:[]), [decls]) }
+    { ConstDecl (c, (nmsp |> Option.value ~default:[]), decls) }
 
   | p = PROC; i = ident_str; n = option(namespace); ar = option(proc_args_decl);
     rt = option(return_type); ex = option(export); dcl = proc_local_decl;

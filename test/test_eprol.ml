@@ -149,9 +149,10 @@ let tests = [
                           (dl, { name = "bar"; namespace = ["foo"] }),
                           (I32 dl)))
    ]);
-  ("global variable declaration",
+  ("globals declaration",
    "VAR : foo i32 a := 3, b := 7 f64 c := 3.14 EXPORT \"PI\", END
-    VAR u8 d END",
+    VAR u8 d END
+    CONST : foo a = 4, b = 2 END",
    [
      (ToplevelDbg (VarDecl
                     (dl, ["foo"],
@@ -165,6 +166,11 @@ let tests = [
                     (dl, [],
                      [((U8 dl),
                        [(dl, "d", None, None)])])));
+     (ToplevelDbg (ConstDecl
+                    (dl, ["foo"],
+                     (ConstType,
+                      [(dl, "a", Some (Lit (LitInt (dl, 4))), None);
+                       (dl, "b", Some (Lit (LitInt (dl, 2))), None)]))));
    ]);
  ("procedures",
   "PROC foo DO 1 END
