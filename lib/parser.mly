@@ -38,6 +38,8 @@ debug_prog:
   | stmts = nonempty_list(top_level_stmt); EOF
     { stmts |> List.map (fun stmt -> ToplevelDbg stmt) }
 
+
+(* TODO: catch and rcover from parser errors *)
 prog:
   | stmts = list(top_level_stmt); EOF
     { stmts }
@@ -48,9 +50,16 @@ top_level_stmt:
     typ = import_type
     { Import (i, names |> List.map (function | (_, s) -> s), idnt, typ) }
 
-  | v = VAR; nmsp = option(namespace); decls = decl_block_list; END
-    { VarDecl (v, (match nmsp with | Some n -> n | None -> []), decls) }
+  | v = VAR; nmsp = option(namespace); decls = nonempty_list(var_decl_block); END
+    { VarDecl (v, (nmsp |> Option.value ~default:[]), decls) }
 
+  | p = PROC; i = ident_str; n = option(namespace); ar = option(proc_args_decl);
+    rt = option(return_type); ex = option(export); dcl = proc_local_decl;
+    DO; stmts = stmt_list; END
+    { Proc (p, { name = i; namespace = n |> Option.value ~default:[] },
+      (ar |> Option.value ~default:[]),
+      (rt |> Option.value ~default:Void),
+      ex, dcl, stmts) }
 
 (* all this weird separation to have:
     a, SEMICOLON as a statement separator
@@ -59,9 +68,7 @@ top_level_stmt:
 *)
 stmt_list:
   | list(SEMICOLON); lst = option(stmt_chain)
-    { match lst with
-      | Some chain -> chain
-      | None -> [] }
+    { lst |> Option.value ~default:[] }
 
 
 stmt_chain:
@@ -99,7 +106,7 @@ control_block:
 
   | i = IF; cond = expr; DO; body = stmt_list; elifs = list(if_elif);
     els = option(if_else); END
-    { If (i, cond, body, elifs, match els with | Some els -> els | None -> []) }
+    { If (i, cond, body, elifs, els |> Option.value ~default:[]) }
 
   (* FOR with TO or DOWNTO *)
   | f = FOR; i = idnt; FROM; from_e = expr; upto = for_to;
@@ -112,9 +119,7 @@ control_block:
       For (f, iv, from_e, (* loc, var_data, initial value *)
            (Binop (cmp, (Var (il, iv)), to_e)), (* until *)
            (* either use provided step, or TO default *)
-           (match step with
-              | Some step_e -> step_e
-              | None -> Lit (LitInt (il, to_stp))),
+           (step |> Option.value ~default:(Lit (LitInt (il, to_stp)))),
            stmts)
     }
 
@@ -123,11 +128,38 @@ control_block:
     step = option(for_step); DO; stmts = stmt_list; END
    { match i with | (il, iv) ->
      For (f, iv, from_e, until_e,
-          (match step with
-             | Some step_e -> step_e
-             | None -> Lit (LitInt (il, 1))),
+          (step |> Option.value ~default:(Lit (LitInt (il, 1)))),
           stmts)
     }
+
+
+(* TODO: demand proper comma separation in PROC args *)
+proc_args_decl:
+ | LROUND; l = list(arg_decl); RROUND
+    { l }
+
+arg_decl:
+  | t = wtype; is = nonempty_list(ident_str_comma)
+    { (t, is) }
+
+ident_str_comma:
+  | i = ident_str; option(COMMA)
+    { i }
+
+
+proc_local_decl:
+  | l = list(alt_proc_decl)
+    { l }
+
+  | v = nonempty_list(var_decl_block); rest = list(alt_proc_decl)
+    { (VarDeclType, v) :: rest }
+
+alt_proc_decl:
+  | VAR; v = list(var_decl_block)
+    { (VarDeclType, v) }
+
+  | CONST; c = list(const_decl_block)
+    { (ConstDeclType, c) }
 
 
 for_to:
@@ -145,6 +177,9 @@ if_else:
   | ELSE; option(DO); body = stmt_list
      { body }
 
+return_type:
+  | COLON; t = wtype
+    { t }
 
 import_type:
   | w = wtype
@@ -162,24 +197,37 @@ wtype:
     }
 
 
-decl_block_list:
-  | l = nonempty_list(decl_block)
-    { l }
-
-decl_block:
-  | w = wtype; l = decl_stmt_chain
+var_decl_block:
+  | w = wtype; l = var_decl_stmt_chain
     { (w, l) }
 
-decl_stmt_chain:
-      | s = decl_stmt; COMMA; rest = decl_stmt_chain
+var_decl_stmt_chain:
+      | s = var_decl_stmt; COMMA; rest = var_decl_stmt_chain
         { s :: rest }
 
-      | s = decl_stmt; option(COMMA)
+      | s = var_decl_stmt; option(COMMA)
         { [s] }
 
-decl_stmt:
+var_decl_stmt:
   | i = IDENT; a = option(assign); ex = option(export)
     { match i with | (l, v) -> (l, v, a, ex) }
+
+
+const_decl_block:
+  | l = const_decl_stmt_chain
+    { (ConstType, l) }
+
+const_decl_stmt_chain:
+      | s = const_decl_stmt; COMMA; rest = const_decl_stmt_chain
+        { s :: rest }
+
+      | s = const_decl_stmt; option(COMMA)
+        { [s] }
+
+const_decl_stmt:
+  | i = IDENT; EQ; e = expr
+    { match i with | (l, v) -> (l, v, Some e, None) }
+
 
 assign:
   | ASSIGN; e = expr
@@ -207,6 +255,10 @@ expr:
     { match i with | (l, v) -> Var (l, v) }
 
 
+ident_str:
+  | i = IDENT
+    { match i with | (_, s) -> s }
+
 idnt:
   (* accumulate strings of leading idents until the last one is the base *)
   | names = separated_nonempty_list(PERIOD, IDENT)
@@ -220,13 +272,11 @@ idnt:
 idnt_namespace:
   | i = IDENT; n = option(namespace)
     { match i with | (l, s) ->
-        match n with
-        | Some n -> (l, { name = s; namespace = n })
-        | None -> (l, { name = s; namespace = [] }) }
+        (l, {name = s; namespace = n |> Option.value ~default:[] }) }
 
 namespace:
-  | COLON; i = separated_nonempty_list(PERIOD, IDENT)
-    { i |> List.map (function | (_, s) -> s) }
+  | COLON; i = separated_nonempty_list(PERIOD, ident_str)
+    { i }
 
 
 binops_and_the_like:

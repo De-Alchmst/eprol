@@ -32,7 +32,7 @@ and unop =
   | Nbool of loc
 
 and wtype =
-  | Void
+  | Void | ConstType
   | I8  of loc | U8  of loc | S8  of loc
   | I16 of loc | U16 of loc | S16 of loc
   | I32 of loc | U32 of loc | S32 of loc
@@ -45,6 +45,7 @@ and literal =
   | LitString of loc * string
 
 (* var_data, name, init value, export name *)
+and decl_type = | VarDeclType | ConstDeclType
 and var_decl = loc * string * expr option * string option
 and var_decl_block = wtype * var_decl list
 
@@ -83,9 +84,10 @@ and stmt =
   | ToplevelDbg of top_level_stmt
 
 and top_level_stmt =
-  (* name/namespace, args, returnType, locals, body *)
-  | Proc of loc * var_data * var_data list * wtype * (loc * var_data) list * stmt list
+  (* name/namespace, args, returnType, export, locals, body *)
+  | Proc of loc * var_data * (wtype * string list) list * wtype * string option * (decl_type * var_decl_block list) list * stmt list
   | VarDecl of loc * string list * var_decl_block list
+  | ConstDecl of loc * string list * var_decl_block list
   | Import of loc * string list * (loc * var_data) * wtype
 
 and program = top_level_stmt list

@@ -144,28 +144,66 @@ let tests = [
    ]);
   ("import statement",
    "IMPORT \"foo\" \"bar\" AS bar : foo I32",
-    [
-      ToplevelDbg (Import (dl, ["foo"; "bar"],
-                           (dl, { name = "bar"; namespace = ["foo"] }),
-                           (I32 dl)))
-    ]);
-   ("global variable declaration",
-    "VAR : foo i32 a := 3, b := 7 f64 c := 3.14 EXPORT \"PI\", END
-     VAR u8 d END",
-    [
-      (ToplevelDbg (VarDecl
-                     (dl, ["foo"],
-                      [((I32 dl),
-                        [(dl, "a", (Some (Lit (LitInt (dl, 3)))), None);
-                         (dl, "b", (Some (Lit (LitInt (dl, 7)))), None)]);
-                       ((F64 dl),
-                         [(dl, "c", (Some (Lit (LitFloat (dl, 3.14)))), Some "PI")])
-                      ])));
-      (ToplevelDbg (VarDecl
-                     (dl, [],
-                      [((U8 dl),
-                        [(dl, "d", None, None)])])));
-    ]);
+   [
+     ToplevelDbg (Import (dl, ["foo"; "bar"],
+                          (dl, { name = "bar"; namespace = ["foo"] }),
+                          (I32 dl)))
+   ]);
+  ("global variable declaration",
+   "VAR : foo i32 a := 3, b := 7 f64 c := 3.14 EXPORT \"PI\", END
+    VAR u8 d END",
+   [
+     (ToplevelDbg (VarDecl
+                    (dl, ["foo"],
+                     [((I32 dl),
+                       [(dl, "a", (Some (Lit (LitInt (dl, 3)))), None);
+                        (dl, "b", (Some (Lit (LitInt (dl, 7)))), None)]);
+                      ((F64 dl),
+                        [(dl, "c", (Some (Lit (LitFloat (dl, 3.14)))), Some "PI")])
+                     ])));
+     (ToplevelDbg (VarDecl
+                    (dl, [],
+                     [((U8 dl),
+                       [(dl, "d", None, None)])])));
+   ]);
+ ("procedures",
+  "PROC foo DO 1 END
+   PROC foo : bar (i32 a, b, f32 c): i32 EXPORT \"ex\" DO 2 END
+   PROC foo()
+     i32 aa := 0, bb f64 cc := 1.0
+     CONST ca = 1, cb = 3,
+     VAR i64 aaa := 4,
+     DO 3 END
+   PROC foo CONST a = 1 DO 4 END",
+  [
+    ToplevelDbg (Proc (dl, { name = "foo"; namespace = [] }, [], Void,
+                       None, [], [Expr (Lit (LitInt (dl, 1)))]));
+
+    ToplevelDbg (Proc (dl, { name = "foo"; namespace = ["bar"] },
+                       [((I32 dl), ["a"; "b"]); ((F32 dl), ["c"])],
+                       (I32 dl), Some "ex", [],
+                       [Expr (Lit (LitInt (dl, 2)))]));
+
+    ToplevelDbg (Proc (dl, { name = "foo"; namespace = [] }, [], Void,
+                       None,
+                       [(VarDeclType, [((I32 dl), [(dl, "aa",
+                                                        Some (Lit (LitInt (dl, 0))),
+                                                        None);
+                                                   (dl, "bb", None, None)]);
+                                       ((F64 dl), [(dl, "cc",
+                                                        Some (Lit (LitFloat (dl, 1.0))),
+                                                        None)])]);
+                        (ConstDeclType, [(ConstType, [(dl, "ca", Some (Lit (LitInt (dl, 1))), None);
+                                                      (dl, "cb", Some (Lit (LitInt (dl, 3))), None)])]);
+                        (VarDeclType, [((I64 dl), [(dl, "aaa", Some (Lit (LitInt (dl, 4))), None)])]);
+                       ],
+                       [Expr (Lit (LitInt (dl, 3)))]));
+
+    ToplevelDbg (Proc (dl, { name = "foo"; namespace = [] }, [], Void,
+                       None,
+                       [(ConstDeclType, [(ConstType, [(dl, "a", Some (Lit (LitInt (dl, 1))), None)])])],
+                       [Expr (Lit (LitInt (dl, 4)))]));
+  ]);
 ]
 
 
