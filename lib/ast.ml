@@ -45,7 +45,7 @@ and literal =
   | LitString of loc * string
 
 (* var_data, name, init value, export name *)
-and decl_type = | VarDeclType | ConstDeclType
+and decl_type = | VarDeclType | ConstDeclType | StaticDeclType
 and var_decl = loc * string * expr option * string option
 and var_decl_block = wtype * var_decl list
 

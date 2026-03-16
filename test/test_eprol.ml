@@ -179,6 +179,7 @@ let tests = [
      i32 aa := 0, bb f64 cc := 1.0
      CONST ca = 1, cb = 3,
      VAR i64 aaa := 4,
+     STATIC i32 bbb := 2
      DO 3 END
    PROC foo CONST a = 1 DO 4 END",
   [
@@ -202,6 +203,7 @@ let tests = [
                         (ConstDeclType, [(ConstType, [(dl, "ca", Some (Lit (LitInt (dl, 1))), None);
                                                       (dl, "cb", Some (Lit (LitInt (dl, 3))), None)])]);
                         (VarDeclType, [((I64 dl), [(dl, "aaa", Some (Lit (LitInt (dl, 4))), None)])]);
+                        (StaticDeclType, [((I32 dl), [(dl, "bbb", Some (Lit (LitInt (dl, 2))), None)])]);
                        ],
                        [Expr (Lit (LitInt (dl, 3)))]));
 

@@ -164,6 +164,9 @@ alt_proc_decl:
   | CONST; c = list(const_decl_block)
     { (ConstDeclType, c) }
 
+  | STATIC; v = list(var_decl_block)
+    { (StaticDeclType, v) }
+
 
 for_to:
   | TO;     e = expr { ((Lt (dummy_loc, false, false)),  1, e) }
