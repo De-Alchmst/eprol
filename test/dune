@@ -1,4 +1,0 @@
-(test
- (name test_eprol)
- (modules test_eprol)
- (libraries eprol_compiler_lib))
