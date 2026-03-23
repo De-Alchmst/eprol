@@ -1,7 +1,7 @@
 use logos::Logos;
 use std::fmt;
 
-#[derive(Logos, Clone, PartialEq)]
+#[derive(Logos, Clone, PartialEq, Debug)]
 #[logos(skip r"[ \t\n\f]+")]
 pub enum Token<'a> {
     Error,
@@ -96,10 +96,10 @@ pub enum Token<'a> {
     #[regex(r"[iIfFuUsS](8|16|32|64)", priority=20)]
     Type(&'a str),
 
-    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().parse().ok(), priority=30)]
-    Float(f64),
-    #[regex(r"[0-9]+", |lex| lex.slice().parse().ok(), priority=20)]
-    Int(i64),
+    #[regex(r"[0-9]+\.[0-9]+", priority=30)]
+    Float(&'a str),
+    #[regex(r"[0-9]+", priority=20)]
+    Int(&'a str),
 
     #[regex(r#""(\\"|[^"])*""#)]
     String(&'a str),
@@ -153,6 +153,8 @@ pub enum Token<'a> {
     GreaterThan,
     #[token("<=")]
     LesserEqualThan,
+    #[token(">=")]
+    GreaterEqualThan,
     #[token(":=")]
     Assign,
 }
@@ -160,9 +162,81 @@ pub enum Token<'a> {
 impl fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Self::Error => write!(f, "<erreor>"),
+            Self::Proc => write!(f, "PROC"),
+            Self::Do => write!(f, "DO"),
+            Self::End => write!(f, "END"),
+            Self::If => write!(f, "IF"),
+            Self::Elif => write!(f, "ELIF"),
+            Self::Else => write!(f, "ELSE"),
+            Self::While => write!(f, "WHILE"),
+            Self::Loop => write!(f, "LOOP"),
+            Self::For => write!(f, "FOR"),
+            Self::From => write!(f, "FROM"),
+            Self::To => write!(f, "TO"),
+            Self::Downto => write!(f, "DOWNTO"),
+            Self::Until => write!(f, "UNTIL"),
+            Self::Step => write!(f, "STEP"),
+            Self::Case => write!(f, "CASE"),
+            Self::Of => write!(f, "OF"),
+            Self::In => write!(f, "IN"),
+            Self::Return => write!(f, "RETURN"),
+            Self::Break => write!(f, "BREAK"),
+            Self::Next => write!(f, "NEXT"),
+            Self::Give => write!(f, "GIVE"),
+            Self::Var => write!(f, "VAR"),
+            Self::Const => write!(f, "CONST"),
+            Self::Static => write!(f, "STATIC"),
+            Self::Accessor => write!(f, "ACCESSOR"),
+            Self::Enum => write!(f, "ENUM"),
+            Self::Record => write!(f, "RECORD"),
+            Self::Extends => write!(f, "EXTENDS"),
+            Self::Export => write!(f, "EXPORT"),
+            Self::Use => write!(f, "USE"),
+            Self::Import => write!(f, "IMPORT"),
+            Self::As => write!(f, "AS"),
+            Self::Not => write!(f, "NOT"),
+            Self::Bool => write!(f, "BOOL"),
+            Self::Nbool => write!(f, "NBOOL"),
+            Self::And => write!(f, "AND"),
+            Self::Or => write!(f, "OR"),
+            Self::Xor => write!(f, "XOR"),
+            Self::Nand => write!(f, "NAND"),
+            Self::Nor => write!(f, "NOR"),
+            Self::Nxor => write!(f, "NXOR"),
+            Self::True => write!(f, "TRUE"),
+            Self::False => write!(f, "FALSE"),
+            Self::Type(s) => write!(f, "{s}"),
             Self::Float(s) => write!(f, "{s}"),
-            Self::Error => write!(f, "<error>"),
-            _ => write!(f, "UNIMPLEMENTED")
+            Self::Int(s) => write!(f, "{s}"),
+            Self::String(s) => write!(f, "\"{s}\""),
+            Self::Ident(s) => write!(f, "{s}"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Period => write!(f, "."),
+            Self::Comma => write!(f, ","),
+            Self::Colon => write!(f, ":"),
+            Self::Pipe => write!(f, "|"),
+            Self::AtSym => write!(f, "@"),
+            Self::Caret => write!(f, "^"),
+            Self::LRound => write!(f, "("),
+            Self::RRound => write!(f, ")"),
+            Self::LCurly => write!(f, "{}", '{'),
+            Self::RCurly => write!(f, "{}", '}'),
+            Self::LSquare => write!(f, "["),
+            Self::RSquare => write!(f, "]"),
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Star => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::Percent => write!(f, "%"),
+            Self::Equal => write!(f, "="),
+            Self::NotEqual => write!(f, "<>"),
+            Self::LesserThan => write!(f, "<"),
+            Self::GreaterThan => write!(f, ">"),
+            Self::LesserEqualThan => write!(f, "<="),
+            Self::GreaterEqualThan => write!(f, ">="),
+            Self::Assign => write!(f, ":="),
+            // _ => write!(f, "UNIMPLEMENTED")
         }
     }
 }
