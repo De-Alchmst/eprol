@@ -45,6 +45,19 @@ pub fn parse_str_stmt(input: &str) -> Result<Stmt<'_>, Vec<Rich<'_, Token<'_>, S
     stmt().parse(token_stream).into_result()
 }
 
+pub fn parse_str_top_level(input: &str) -> Result<TopLevel<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
+    let token_iter = Token::lexer(input)
+        .spanned() .map(|(tok, span)| match tok {
+            Ok(tok) => (tok, span.into()),
+            Err(()) => (Token::Error, span.into()),
+        });
+    let token_stream = Stream::from_iter(token_iter)
+        .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
+
+    top_level().parse(token_stream).into_result()
+}
+
+
 
 fn ident<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
@@ -145,13 +158,64 @@ where
 }
 
 
-// fn top_level<'tokens, 'src: 'tokens, I>(
-// ) -> impl Parser<'tokens, I, TopLevel, extra::Err<Rich<'tokens, Token<'src>>>>
-// where
-//     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
-// {
+fn import_type<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, &'src str, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    choice((
+        select! {
+            Token::Type(s) => s
+        },
+    ))
+}
 
-// }
+
+fn optional_namespace_declare<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    choice((
+        select! { Token::Ident(s) => s }
+        .then_ignore(just(Token::Colon))
+        .then(
+            select! { Token::Ident(s) => s }
+            .separated_by(just(Token::Period))
+            .at_least(1)
+            .collect::<Vec<_>>()
+        )
+        .map(|(idnt, nmspc)| {
+            Ident {
+                name: idnt,
+                namespace: nmspc
+            }
+        }),
+    ))
+}
+
+
+fn top_level<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, TopLevel<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    choice((
+        just(Token::Import)
+        .ignore_then(
+            select!{Token::String(s) => s}
+            .repeated()
+            .at_least(1)
+            .collect::<Vec<_>>()
+        )
+        .then_ignore(just(Token::As))
+        .then(optional_namespace_declare())
+        .then(import_type())
+        .map(|((strings, ident), typ)|
+            TopLevel::Import(strings, ident, typ)
+        ),
+    ))
+}
 
 
 // fn parser<'tokens, 'src: 'tokens, I>(
@@ -218,5 +282,12 @@ mod tests {
         Ok(Expr::Binop(Binop::Add,
                 Box::new(Expr::Lit(Literal::Int(3))),
                 Box::new(Expr::Lit(Literal::Int(7))))))
+    }
+
+    #[test]
+    fn import() {
+        assert_eq!(parse_str_top_level("IMPORT \"foo\" \"bar\" AS a : b I32"),
+        Ok(TopLevel::Import(vec!["foo", "bar"],
+                            Ident { name: "a", namespace: vec!["b"] }, "I32")))
     }
 }

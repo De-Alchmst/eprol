@@ -101,7 +101,10 @@ pub enum Token<'a> {
     #[regex(r"[0-9]+", priority=20)]
     Int(&'a str),
 
-    #[regex(r#""(\\"|[^"])*""#)]
+    #[regex(r#""(\\"|[^"])*""#, |lex| { 
+        let s = lex.slice();
+        &s[1..s.len() - 1]
+    })]
     String(&'a str),
 
     #[regex(r"[_\p{Alphabetic}][_\p{Alphabetic}0-9]*", priority=1)]

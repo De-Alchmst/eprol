@@ -57,7 +57,8 @@ pub enum TopLevel<'a> {
     ConstDecl,
     VarDecl,
     FuncDecl,
-    Stmt(Stmt<'a>),
+    // outer name, inner name, type
+    Import(Vec<&'a str>, Ident<'a>, &'a str),
 }
 
 type Program<'a> = Vec<TopLevel<'a>>;
