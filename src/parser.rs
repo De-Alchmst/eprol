@@ -6,57 +6,44 @@ use chumsky::{
     prelude::*,
 };
 
-type TokenStream<'src> = Stream<
-    std::iter::Map<
-        logos::SpannedIter<'src, Token<'src>>,
-        fn((Result<Token<'src>, ()>, std::ops::Range<usize>)) -> (Token<'src>, SimpleSpan),
-    >,
->;
-
-pub fn make_token_stream(input: &str) -> TokenStream<'_> {
+pub fn parse_str_expr(input: &str) -> Result<Expr<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
+    // Create a logos lexer over the source code
     let token_iter = Token::lexer(input)
         .spanned()
-        .map((|(tok, span)| match tok {
+        // Convert logos errors into tokens. We want parsing to be recoverable
+        // and not fail at the lexing stage, so we have a dedicated
+        // `Token::Error` variant that represents a token error that was
+        // previously encountered
+        .map(|(tok, span)| match tok {
+            // Turn the `Range<usize>` spans logos gives us into chumsky's
+            // `SimpleSpan` via `Into`, because it's easier to work with
             Ok(tok) => (tok, span.into()),
             Err(()) => (Token::Error, span.into()),
-        }) as fn(_) -> _);
+        });
 
-    Stream::from_iter(token_iter)
-        .map((0..input.len()).into(), |(t, s): (_, _)| (t, s))
-}
+    // Turn the token iterator into a stream that chumsky can use for things
+    // like backtracking
+    let token_stream = Stream::from_iter(token_iter)
+        // Tell chumsky to split the (Token, SimpleSpan) stream into its parts
+        // so that it can handle the spans for us
+        // This involves giving chumsky an 'end of input' span: we just use a
+        // zero-width span at the end of the string
+        .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
 
-pub fn parse_expr<'src>(
-    token_stream: TokenStream<'src>,
-) -> Result<Expr<'src>, Vec<Rich<'src, Token<'src>, SimpleSpan>>> {
     expr().parse(token_stream).into_result()
 }
 
-// pub fn parse_str_expr(input: &str) -> Result<Expr<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
-//     // Create a logos lexer over the source code
-//     let token_iter = Token::lexer(input)
-//         .spanned()
-//         // Convert logos errors into tokens. We want parsing to be recoverable
-//         // and not fail at the lexing stage, so we have a dedicated
-//         // `Token::Error` variant that represents a token error that was
-//         // previously encountered
-//         .map(|(tok, span)| match tok {
-//             // Turn the `Range<usize>` spans logos gives us into chumsky's
-//             // `SimpleSpan` via `Into`, because it's easier to work with
-//             Ok(tok) => (tok, span.into()),
-//             Err(()) => (Token::Error, span.into()),
-//         });
+pub fn parse_str_stmt(input: &str) -> Result<Stmt<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
+    let token_iter = Token::lexer(input)
+        .spanned() .map(|(tok, span)| match tok {
+            Ok(tok) => (tok, span.into()),
+            Err(()) => (Token::Error, span.into()),
+        });
+    let token_stream = Stream::from_iter(token_iter)
+        .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
 
-//     // Turn the token iterator into a stream that chumsky can use for things
-//     // like backtracking
-//     let token_stream = Stream::from_iter(token_iter)
-//         // Tell chumsky to split the (Token, SimpleSpan) stream into its parts
-//         // so that it can handle the spans for us
-//         // This involves giving chumsky an 'end of input' span: we just use a
-//         // zero-width span at the end of the string
-//         .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
-
-//     expr().parse(token_stream).into_result()
-// }
+    stmt().parse(token_stream).into_result()
+}
 
 
 fn ident<'tokens, 'src: 'tokens, I>(
@@ -91,7 +78,7 @@ where
             },
             exp.delimited_by(just(Token::LRound), just(Token::RRound)),
             ident().map(Expr::Ident),
-        )).boxed(); // needs to be boxed, or cannot unop.clone()
+        )).boxed();
 
         let unop = choice((
             just(Token::Minus),
@@ -147,13 +134,14 @@ fn stmt<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    let assignment = ident()
-        .then_ignore(just(Token::Assign))
-        .then(expr())
-        .map(|(idnt, exp)|
-            Stmt::Assign(idnt, exp));
-
-    assignment
+    choice((
+        ident()
+            .then_ignore(just(Token::Assign))
+            .then(expr())
+            .map(|(idnt, exp)|
+                Stmt::Assign(idnt, exp)),
+        expr().map(|e| Stmt::Expr(e))
+    ))
 }
 
 
@@ -178,7 +166,7 @@ where
 mod tests {
     use super::*;
     #[test]
-    fn test_basic_expr() {
+    fn basic_expr() {
         assert_eq!(parse_str_expr("42"), Ok(Expr::Lit(Literal::Int(42))));
     }
 
@@ -213,5 +201,22 @@ mod tests {
         Ok(Expr::Binop(Binop::Add,
                 Box::new(Expr::Ident(Ident { name: "c", namespace: vec!["a", "b"] })),
                 Box::new(Expr::Ident(Ident { name: "ni", namespace: vec![] })))))
+    }
+
+    #[test]
+    fn assignment() {
+        assert_eq!(parse_str_stmt("foo := 1-2"),
+        Ok(Stmt::Assign(Ident {name: "foo", namespace: vec![]},
+                Expr::Binop(Binop::Sub,
+                    Box::new(Expr::Lit(Literal::Int(1))),
+                    Box::new(Expr::Lit(Literal::Int(2)))))))
+    }
+
+    #[test]
+    fn expr_stmt() {
+        assert_eq!(parse_str_expr("3+7"),
+        Ok(Expr::Binop(Binop::Add,
+                Box::new(Expr::Lit(Literal::Int(3))),
+                Box::new(Expr::Lit(Literal::Int(7))))))
     }
 }
