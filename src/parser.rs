@@ -38,7 +38,7 @@ fn expr<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    recursive(|_exp| {
+    recursive(|exp| {
         let end_node = select!{
             Token::Ident(i) => Expr::Ident(i),
             Token::Int(n) => Expr::Lit(Literal::Int(n.parse().unwrap_or(0))),
@@ -48,7 +48,51 @@ where
             Token::String(s) => Expr::Lit(Literal::Str(s))
         };
 
-        end_node
+        let unop = choice((
+            just(Token::Minus),
+            just(Token::Plus),
+            just(Token::Not)
+        ))
+            .repeated()
+            .foldr(end_node, |op, rhs|
+                match op {
+                    Token::Minus => Expr::Unop(Unop::Neg, Box::new(rhs)),
+                    Token::Not   => Expr::Unop(Unop::Not, Box::new(rhs)),
+                    Token::Plus  => rhs,
+                    _ => unreachable!(),
+                });
+
+        let binop_product = unop.clone().foldl(
+            choice((
+                just(Token::Star),
+                just(Token::Slash),
+            ))
+            .then(unop)
+            .repeated(),
+            |lhs, (op, rhs)|
+            Expr::Binop(match op {
+                Token::Star  => Binop::Mul,
+                Token::Slash => Binop::Div,
+                _ => unreachable!(),
+            }, Box::new(lhs), Box::new(rhs))
+        );
+
+        let binop_sum = binop_product.clone().foldl(
+            choice((
+                just(Token::Plus),
+                just(Token::Minus),
+            ))
+            .then(binop_product)
+            .repeated(),
+            |lhs, (op, rhs)|
+            Expr::Binop(match op {
+                Token::Plus  => Binop::Add,
+                Token::Minus => Binop::Sub,
+                _ => unreachable!(),
+            }, Box::new(lhs), Box::new(rhs))
+        );
+
+        binop_sum
     })
 }
 
@@ -85,5 +129,28 @@ mod tests {
     #[test]
     fn test_basic_expr() {
         assert_eq!(parse_str_expr("42"), Ok(Expr::Lit(Literal::Int(42))));
+    }
+
+    #[test]
+    fn basic_unop() {
+        assert_eq!(parse_str_expr("NOT --+-42"),
+        Ok(Expr::Unop(Unop::Not,
+                Box::new(Expr::Unop(Unop::Neg,
+                    Box::new(Expr::Unop(Unop::Neg,
+                        Box::new(Expr::Unop(Unop::Neg,
+                            Box::new(Expr::Lit(Literal::Int(42))))))))))))
+    }
+
+    #[test]
+    fn basic_binop() {
+        assert_eq!(parse_str_expr("-2 + 6 * +7 + 9"),
+        Ok(Expr::Binop(Binop::Add,
+                Box::new(Expr::Binop(Binop::Add,
+                        Box::new(Expr::Unop(Unop::Neg,
+                                Box::new(Expr::Lit(Literal::Int(2))))),
+                        Box::new(Expr::Binop(Binop::Mul,
+                                Box::new(Expr::Lit(Literal::Int(6))),
+                                Box::new(Expr::Lit(Literal::Int(7))))))),
+                Box::new(Expr::Lit(Literal::Int(9))))))
     }
 }

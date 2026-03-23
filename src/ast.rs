@@ -27,8 +27,16 @@ pub enum Literal<'a> {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum Unop {
+    Neg,
+    Not,
+}
+
+
+#[derive(Debug, PartialEq)]
 pub enum Expr<'a> {
     Lit(Literal<'a>),
+    Unop(Unop, Box<Expr<'a>>),
     Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
     Ident(&'a str),
 }
