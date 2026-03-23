@@ -49,7 +49,7 @@ pub enum Expr<'a> {
 #[derive(Debug, PartialEq)]
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
-    Assign(&'a str, Expr<'a>),
+    Assign(Ident<'a>, Expr<'a>),
 }
 
 #[derive(Debug, PartialEq)]
