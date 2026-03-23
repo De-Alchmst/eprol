@@ -33,20 +33,40 @@ pub fn parse_str_expr(input: &str) -> Result<Expr<'_>, Vec<Rich<'_, Token<'_>, S
     expr().parse(token_stream).into_result()
 }
 
+
+fn ident<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    select! { Token::Ident(s) => s }
+        .separated_by(just(Token::Period))
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(|mut parts| {
+            let name = parts.pop().unwrap(); // safe: at_least(1)
+            Ident { name, namespace: parts }
+        })
+}
+
+
 fn expr<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Expr<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     recursive(|exp| {
-        let end_node = select!{
-            Token::Ident(i) => Expr::Ident(i),
-            Token::Int(n) => Expr::Lit(Literal::Int(n.parse().unwrap_or(0))),
-            Token::Float(n) => Expr::Lit(Literal::Float(n.parse().unwrap_or(0.0))),
-            Token::True => Expr::Lit(Literal::Int(1)),
-            Token::False => Expr::Lit(Literal::Int(0)),
-            Token::String(s) => Expr::Lit(Literal::Str(s))
-        };
+        let end_node = choice((
+            select!{
+                Token::Int(n) => Expr::Lit(Literal::Int(n.parse().unwrap_or(0))),
+                Token::Float(n) => Expr::Lit(Literal::Float(n.parse().unwrap_or(0.0))),
+                Token::True => Expr::Lit(Literal::Int(1)),
+                Token::False => Expr::Lit(Literal::Int(0)),
+                Token::String(s) => Expr::Lit(Literal::Str(s))
+            },
+            exp.delimited_by(just(Token::LRound), just(Token::RRound)),
+            ident().map(Expr::Ident),
+        )).boxed();
 
         let unop = choice((
             just(Token::Minus),
@@ -98,11 +118,11 @@ where
 
 
 // fn stmt<'tokens, 'src: 'tokens, I>(
-// ) -> impl Parser<'tokens, I, Stmt, extra::Err<Rich<'tokens, Token<'src>>>>
+// ) -> impl Parser<'tokens, I, Stmt<'tokens>, extra::Err<Rich<'tokens, Token<'src>>>>
 // where
 //     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 // {
-
+//     let assignment = 
 // }
 
 
@@ -143,14 +163,24 @@ mod tests {
 
     #[test]
     fn basic_binop() {
-        assert_eq!(parse_str_expr("-2 + 6 * +7 + 9"),
+        assert_eq!(parse_str_expr("-2 + (6 - 9) * +7 + 9"),
         Ok(Expr::Binop(Binop::Add,
                 Box::new(Expr::Binop(Binop::Add,
                         Box::new(Expr::Unop(Unop::Neg,
                                 Box::new(Expr::Lit(Literal::Int(2))))),
                         Box::new(Expr::Binop(Binop::Mul,
-                                Box::new(Expr::Lit(Literal::Int(6))),
+                                Box::new(Expr::Binop(Binop::Sub,
+                                        Box::new(Expr::Lit(Literal::Int(6))),
+                                        Box::new(Expr::Lit(Literal::Int(9))))),
                                 Box::new(Expr::Lit(Literal::Int(7))))))),
                 Box::new(Expr::Lit(Literal::Int(9))))))
+    }
+
+    #[test]
+    fn basic_idents() {
+        assert_eq!(parse_str_expr("a.b.c + ni"),
+        Ok(Expr::Binop(Binop::Add,
+                Box::new(Expr::Ident(Ident { name: "c", namespace: vec!["a", "b"] })),
+                Box::new(Expr::Ident(Ident { name: "ni", namespace: vec![] })))))
     }
 }

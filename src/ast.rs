@@ -32,13 +32,18 @@ pub enum Unop {
     Not,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Ident<'a> {
+    pub name: &'a str,
+    pub namespace: Vec<&'a str>,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Expr<'a> {
     Lit(Literal<'a>),
     Unop(Unop, Box<Expr<'a>>),
     Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
-    Ident(&'a str),
+    Ident(Ident<'a>),
 }
 
 #[derive(Debug, PartialEq)]

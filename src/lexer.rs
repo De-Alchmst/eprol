@@ -104,7 +104,7 @@ pub enum Token<'a> {
     #[regex(r#""(\\"|[^"])*""#)]
     String(&'a str),
 
-    #[regex(r"[_\p{Alphabetic}][_\p{Alphabetic}0-9]+", priority=1)]
+    #[regex(r"[_\p{Alphabetic}][_\p{Alphabetic}0-9]*", priority=1)]
     Ident(&'a str),
 
     #[token(";")]
