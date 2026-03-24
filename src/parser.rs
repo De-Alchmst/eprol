@@ -218,7 +218,7 @@ fn var_decl_body<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    let var_decl_block = select!{ Token::Type(s) => s }
+    let decl_block = select!{ Token::Type(s) => s }
     .then(
         choice((
             ident()
@@ -232,11 +232,25 @@ where
         .collect::<Vec<_>>()
     );
 
-    let var_decl_body = var_decl_block
+    let decl_body = decl_block
         .repeated()
         .collect::<Vec<_>>();
 
-    var_decl_body
+    decl_body
+}
+
+
+fn const_decl_body<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, ConstDeclBlock<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    ident()
+        .then_ignore(just(Token::Equal))
+        .then(expr())
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
 }
 
 
@@ -267,7 +281,15 @@ where
         .then(var_decl_body())
         .then_ignore(just(Token::End))
         .map(|(nmsp, body)|
-            TopLevel::VarDecl(nmsp, body))
+            TopLevel::VarDecl(nmsp, body)),
+
+        // CONST
+        just(Token::Const)
+        .ignore_then(optional_declare_namespace())
+        .then(const_decl_body())
+        .then_ignore(just(Token::End))
+        .map(|(nmsp, body)|
+            TopLevel::ConstDecl(nmsp, body)),
     ))
 }
 
@@ -369,6 +391,21 @@ mod tests {
                     ("I32", vec![(Ident {name: "foo", namespace: vec![]}, None)]),
                     ("I64", vec![(Ident {name: "bar", namespace: vec![]},
                                   Some(Expr::Lit(Literal::Int(7))))]),
+                ])));
+    }
+
+    #[test]
+    fn const_decl() {
+        assert_eq!(parse_str_top_level("CONST END"),
+        Ok(TopLevel::ConstDecl(vec![], vec![])));
+
+        assert_eq!(parse_str_top_level("CONST : re.ee foo = 3, bar = 7, END"),
+        Ok(TopLevel::ConstDecl(vec!["re", "ee"],
+                vec![
+                    (Ident {name: "foo", namespace: vec![]},
+                     Expr::Lit(Literal::Int(3))),
+                    (Ident {name: "bar", namespace: vec![]},
+                     Expr::Lit(Literal::Int(7))),
                 ])));
     }
 }

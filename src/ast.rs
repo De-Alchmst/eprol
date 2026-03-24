@@ -38,8 +38,6 @@ pub enum Unop {
     Not,
 }
 
-pub type VarDeclBlock<'a> = (&'a str, Vec<(Ident<'a>, Option<Expr<'a>>)>);
-
 #[derive(Debug, PartialEq)]
 pub enum Expr<'a> {
     Lit(Literal<'a>),
@@ -54,9 +52,12 @@ pub enum Stmt<'a> {
     Assign(Ident<'a>, Expr<'a>),
 }
 
+pub type VarDeclBlock<'a> = (&'a str, Vec<(Ident<'a>, Option<Expr<'a>>)>);
+pub type ConstDeclBlock<'a> = Vec<(Ident<'a>, Expr<'a>)>;
+
 #[derive(Debug, PartialEq)]
 pub enum TopLevel<'a> {
-    ConstDecl,
+    ConstDecl(Vec<&'a str>, ConstDeclBlock<'a>),
     VarDecl(Vec<&'a str>, Vec<VarDeclBlock<'a>>),
     FuncDecl,
     // outer name, inner name, type
