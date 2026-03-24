@@ -143,18 +143,51 @@ where
 
 
 fn stmt<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, Stmt<'tokens>, extra::Err<Rich<'tokens, Token<'src>>>>
+) -> impl Parser<'tokens, I, Stmt<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
+        // ASSIGN
         ident()
             .then_ignore(just(Token::Assign))
             .then(expr())
             .map(|(idnt, exp)|
                 Stmt::Assign(idnt, exp)),
-        expr().map(|e| Stmt::Expr(e))
+
+        // RETURN
+        just(Token::Return)
+        .ignore_then(expr())
+        .map(|e| Stmt::Return(e)),
+
+        // JUST EXPR
+        expr().map(|e| Stmt::Expr(e)),
     ))
+}
+
+
+fn stmt_vect<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<Stmt<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    stmt()
+        .separated_by(
+            just(Token::Semicolon)
+            .repeated()
+            .at_least(1))
+        .allow_leading()
+        .allow_trailing()
+        .collect::<Vec<_>>()
+}
+
+
+fn simple_type<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, &'src str, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    select!{Token::Type(s) => s}
 }
 
 
@@ -164,9 +197,7 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
-        select! {
-            Token::Type(s) => s
-        },
+        simple_type(),
     ))
 }
 
@@ -209,6 +240,7 @@ where
                 namespace: nmspc
             }
         }),
+        select! { Token::Ident(s) => Ident { name: s, namespace: vec![] } }
     ))
 }
 
@@ -254,42 +286,119 @@ where
 }
 
 
+fn optional_export<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Option<&'src str>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    choice((
+        just(Token::Export)
+            .ignore_then(select!{Token::String(s) => s})
+            .map(Some),
+        empty().to(None),
+    ))
+}
+
+
+fn proc_args_decl<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<ProcArgs<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    choice((
+        simple_type()
+            .then(
+                ident()
+                .separated_by(just(Token::Comma))
+                .at_least(1)
+                .collect::<Vec<_>>()
+            )
+            .separated_by(just(Token::Comma))
+            .collect::<Vec<_>>()
+            .delimited_by(just(Token::LRound), just(Token::RRound)),
+        empty().to(vec![]),
+    ))
+}
+
+
+fn proc_decl_blocks<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<ProcDeclBlock<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    var_decl_body()
+        .then(
+            choice((
+                just(Token::Var)
+                    .ignore_then(var_decl_body())
+                    .map(ProcDeclBlock::Var),
+                just(Token::Const)
+                    .ignore_then(const_decl_body())
+                    .map(ProcDeclBlock::Const),
+            ))
+            .repeated()
+            .collect::<Vec<_>>()
+        )
+        .map(|(initial, mut rest)| {
+            if initial.len() > 0 {
+                rest.insert(0, ProcDeclBlock::Var(initial));
+            }
+            rest
+        })
+}
+
+
 fn top_level<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, TopLevel<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+) -> impl Parser<'tokens, I, TopLevel<'tokens>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
         // IMPORT
         just(Token::Import)
-        .ignore_then(
-            select!{Token::String(s) => s}
-            .repeated()
-            .at_least(1)
-            .collect::<Vec<_>>()
-        )
-        .then_ignore(just(Token::As))
-        .then(name_optional_namespace_declare())
-        .then(import_type())
-        .map(|((strings, ident), typ)|
-            TopLevel::Import(strings, ident, typ)
-        ),
+            .ignore_then(
+                select!{Token::String(s) => s}
+                .repeated()
+                .at_least(1)
+                .collect::<Vec<_>>()
+            )
+            .then_ignore(just(Token::As))
+            .then(name_optional_namespace_declare())
+            .then(import_type())
+            .map(|((strings, ident), typ)|
+                TopLevel::Import(strings, ident, typ)),
 
         // VAR
         just(Token::Var)
-        .ignore_then(optional_declare_namespace())
-        .then(var_decl_body())
-        .then_ignore(just(Token::End))
-        .map(|(nmsp, body)|
-            TopLevel::VarDecl(nmsp, body)),
+            .ignore_then(optional_declare_namespace())
+            .then(var_decl_body())
+            .then_ignore(just(Token::End))
+            .map(|(nmsp, body)|
+                TopLevel::VarDecl(nmsp, body)),
 
         // CONST
         just(Token::Const)
-        .ignore_then(optional_declare_namespace())
-        .then(const_decl_body())
-        .then_ignore(just(Token::End))
-        .map(|(nmsp, body)|
-            TopLevel::ConstDecl(nmsp, body)),
+            .ignore_then(optional_declare_namespace())
+            .then(const_decl_body())
+            .then_ignore(just(Token::End))
+            .map(|(nmsp, body)|
+                TopLevel::ConstDecl(nmsp, body)),
+
+        // PROC
+        just(Token::Proc)
+            .ignore_then(name_optional_namespace_declare())
+            .then(proc_args_decl())
+            .then(choice((
+                just(Token::Colon).ignore_then(simple_type()),
+                empty().to("void"),
+            )))
+            .then(optional_export())
+            .then(proc_decl_blocks())
+            .then_ignore(just(Token::Do))
+            .then(stmt_vect())
+            .then_ignore(just(Token::End))
+            .map(|(((((name, args), typ), export), decls), body)|
+                TopLevel::ProcDecl(name, args, typ, export, decls, body)),
     ))
 }
 
@@ -407,5 +516,51 @@ mod tests {
                     (Ident {name: "bar", namespace: vec![]},
                      Expr::Lit(Literal::Int(7))),
                 ])));
+    }
+
+    #[test]
+    fn proc() {
+        assert_eq!(parse_str_top_level(
+                "PROC foo : bar (i32 a, b, f64 c): i32
+                EXPORT \"exp\"
+                i32 foo
+                CONST bar = 1
+                VAR i64 baz
+                DO
+                    ;;
+                    foo := 3;;
+                    RETURN 7
+                END
+                "),
+        Ok(TopLevel::ProcDecl( Ident {name: "foo", namespace: vec!["bar"]},
+                vec![
+                    ("i32", vec![
+                        Ident {name: "a", namespace: vec![]},
+                        Ident {name: "b", namespace: vec![]}]),
+                    ("f64", vec![Ident {name: "c", namespace: vec![]}])],
+                "i32", Some("exp"),
+                vec![
+                    ProcDeclBlock::Var(vec![
+                        ("i32", vec![(Ident {name: "foo", namespace: vec![]}, None)]),
+                    ]),
+                    ProcDeclBlock::Const(vec![
+                        (Ident {name: "bar", namespace: vec![]},
+                         Expr::Lit(Literal::Int(1)))
+                    ]),
+                    ProcDeclBlock::Var(vec![
+                        ("i64", vec![(Ident {name: "baz", namespace: vec![]}, None)]),
+                    ]),
+                ], vec![
+                    Stmt::Assign(Ident { name: "foo", namespace: vec![] },
+                        Expr::Lit(Literal::Int(3))),
+                    Stmt::Return(Expr::Lit(Literal::Int(7)))
+                ])));
+
+        assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
+        Ok(TopLevel::ProcDecl(Ident {name: "foo", namespace: vec![]},
+                vec![], "void", None, vec![], vec![
+                    Stmt::Assign(Ident { name: "i", namespace: vec![] },
+                        Expr::Lit(Literal::Int(1)))
+                ])))
     }
 }
