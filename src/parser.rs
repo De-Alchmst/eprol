@@ -171,20 +171,38 @@ where
 }
 
 
-fn optional_namespace_declare<'tokens, 'src: 'tokens, I>(
+fn declare_namespace<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<&'src str>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    just(Token::Colon)
+        .ignore_then(
+            select! { Token::Ident(s) => s }
+            .separated_by(just(Token::Period))
+            .at_least(1)
+            .collect::<Vec<_>>()
+        )
+}
+
+fn optional_declare_namespace<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<&'src str>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    declare_namespace()
+        .or(empty().to(vec![]))
+}
+
+
+fn name_optional_namespace_declare<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
         select! { Token::Ident(s) => s }
-        .then_ignore(just(Token::Colon))
-        .then(
-            select! { Token::Ident(s) => s }
-            .separated_by(just(Token::Period))
-            .at_least(1)
-            .collect::<Vec<_>>()
-        )
+        .then(declare_namespace())
         .map(|(idnt, nmspc)| {
             Ident {
                 name: idnt,
@@ -195,12 +213,40 @@ where
 }
 
 
+fn var_decl_body<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Vec<VarDeclBlock<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    let var_decl_block = select!{ Token::Type(s) => s }
+    .then(
+        choice((
+            ident()
+                .then_ignore(just(Token::Assign))
+                .then(expr())
+                .map(|(i, exp)| (i, Some(exp))),
+            ident().map(|i| (i, None)),
+        ))
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+    );
+
+    let var_decl_body = var_decl_block
+        .repeated()
+        .collect::<Vec<_>>();
+
+    var_decl_body
+}
+
+
 fn top_level<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, TopLevel<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
+        // IMPORT
         just(Token::Import)
         .ignore_then(
             select!{Token::String(s) => s}
@@ -209,11 +255,19 @@ where
             .collect::<Vec<_>>()
         )
         .then_ignore(just(Token::As))
-        .then(optional_namespace_declare())
+        .then(name_optional_namespace_declare())
         .then(import_type())
         .map(|((strings, ident), typ)|
             TopLevel::Import(strings, ident, typ)
         ),
+
+        // VAR
+        just(Token::Var)
+        .ignore_then(optional_declare_namespace())
+        .then(var_decl_body())
+        .then_ignore(just(Token::End))
+        .map(|(nmsp, body)|
+            TopLevel::VarDecl(nmsp, body))
     ))
 }
 
@@ -289,5 +343,32 @@ mod tests {
         assert_eq!(parse_str_top_level("IMPORT \"foo\" \"bar\" AS a : b I32"),
         Ok(TopLevel::Import(vec!["foo", "bar"],
                             Ident { name: "a", namespace: vec!["b"] }, "I32")))
+    }
+
+    #[test]
+    fn var_decl() {
+        assert_eq!(parse_str_top_level("VAR END"),
+        Ok(TopLevel::VarDecl(vec![], vec![])));
+
+        assert_eq!(parse_str_top_level("VAR : V I32 foo, bar := 3, baz END"),
+        Ok(TopLevel::VarDecl(vec!["V"],
+                vec![
+                    ("I32", vec![
+                        (Ident {name: "foo", namespace: vec![]},
+                         None),
+                        (Ident {name: "bar", namespace: vec![]},
+                         Some(Expr::Lit(Literal::Int(3)))),
+                        (Ident {name: "baz", namespace: vec![]},
+                         None),
+                    ])
+                ])));
+
+        assert_eq!(parse_str_top_level("VAR I32 foo, I64 bar := 7 END"),
+        Ok(TopLevel::VarDecl(vec![],
+                vec![
+                    ("I32", vec![(Ident {name: "foo", namespace: vec![]}, None)]),
+                    ("I64", vec![(Ident {name: "bar", namespace: vec![]},
+                                  Some(Expr::Lit(Literal::Int(7))))]),
+                ])));
     }
 }

@@ -1,4 +1,10 @@
 #[derive(Debug, PartialEq)]
+pub struct Ident<'a> {
+    pub name: &'a str,
+    pub namespace: Vec<&'a str>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Binop {
     Add,
     Sub,
@@ -32,11 +38,7 @@ pub enum Unop {
     Not,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Ident<'a> {
-    pub name: &'a str,
-    pub namespace: Vec<&'a str>,
-}
+pub type VarDeclBlock<'a> = (&'a str, Vec<(Ident<'a>, Option<Expr<'a>>)>);
 
 #[derive(Debug, PartialEq)]
 pub enum Expr<'a> {
@@ -55,10 +57,10 @@ pub enum Stmt<'a> {
 #[derive(Debug, PartialEq)]
 pub enum TopLevel<'a> {
     ConstDecl,
-    VarDecl,
+    VarDecl(Vec<&'a str>, Vec<VarDeclBlock<'a>>),
     FuncDecl,
     // outer name, inner name, type
     Import(Vec<&'a str>, Ident<'a>, &'a str),
 }
 
-type Program<'a> = Vec<TopLevel<'a>>;
+pub type Program<'a> = Vec<TopLevel<'a>>;
