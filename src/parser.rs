@@ -69,7 +69,7 @@ where
         .at_least(1)
         .collect::<Vec<_>>()
         .map(|mut parts| {
-            let name = parts.pop().unwrap(); // safe: at_least(1)
+            let name = parts.remove(0); // safe: at_least(1)
             Ident { name, namespace: parts }
         })
 }
@@ -82,6 +82,7 @@ where
 {
     recursive(|exp| {
         let end_node = choice((
+            // LITERAL
             select!{
                 Token::Int(n) => Expr::Lit(Literal::Int(n.parse().unwrap_or(0))),
                 Token::Float(n) => Expr::Lit(Literal::Float(n.parse().unwrap_or(0.0))),
@@ -89,7 +90,21 @@ where
                 Token::False => Expr::Lit(Literal::Int(0)),
                 Token::String(s) => Expr::Lit(Literal::Str(s))
             },
-            exp.delimited_by(just(Token::LRound), just(Token::RRound)),
+
+            // PARENTHESISED
+            exp.clone().delimited_by(just(Token::LRound), just(Token::RRound)),
+           
+            // PROC CALL
+            ident()
+                .then(
+                    exp.clone()
+                    .separated_by(just(Token::Comma))
+                    .collect::<Vec<_>>()
+                    .delimited_by(just(Token::LRound), just(Token::RRound)))
+                .map(|(proc, args)|
+                    Expr::ProcCall(proc, args)),
+
+            // IDENT
             ident().map(Expr::Ident),
         )).boxed();
 
@@ -354,7 +369,7 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
-        // IMPORT
+        // IMPORTgo env GOOS GOARCH
         just(Token::Import)
             .ignore_then(
                 select!{Token::String(s) => s}
@@ -448,7 +463,7 @@ mod tests {
     fn basic_idents() {
         assert_eq!(parse_str_expr("a.b.c + ni"),
         Ok(Expr::Binop(Binop::Add,
-                Box::new(Expr::Ident(Ident { name: "c", namespace: vec!["a", "b"] })),
+                Box::new(Expr::Ident(Ident { name: "a", namespace: vec!["b", "c"] })),
                 Box::new(Expr::Ident(Ident { name: "ni", namespace: vec![] })))))
     }
 
@@ -519,7 +534,20 @@ mod tests {
     }
 
     #[test]
-    fn proc() {
+    fn proc_call() {
+        assert_eq!(parse_str_expr("a.b(c(), 1+2)"),
+        Ok(Expr::ProcCall(Ident { name: "a", namespace: vec!["b"] },
+                vec![
+                    Expr::ProcCall(Ident { name: "c", namespace: vec![] },
+                        vec![]),
+                    Expr::Binop(Binop::Add,
+                        Box::new(Expr::Lit(Literal::Int(1))),
+                        Box::new(Expr::Lit(Literal::Int(2))))
+                ])))
+    }
+
+    #[test]
+    fn proc_def() {
         assert_eq!(parse_str_top_level(
                 "PROC foo : bar (i32 a, b, f64 c): i32
                 EXPORT \"exp\"

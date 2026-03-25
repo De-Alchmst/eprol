@@ -44,6 +44,7 @@ pub enum Expr<'a> {
     Unop(Unop, Box<Expr<'a>>),
     Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
     Ident(Ident<'a>),
+    ProcCall(Ident<'a>, Vec<Expr<'a>>),
 }
 
 #[derive(Debug, PartialEq)]
