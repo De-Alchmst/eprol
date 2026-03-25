@@ -8,20 +8,25 @@ pub enum IRBaseType {
 
 #[derive(Debug, PartialEq)]
 pub enum IRExtType {
+    Int,
     I32,
     I64,
+    Float,
     F32,
     F64,
-    Void,
     Func(Vec<IRBaseType>, Option<IRBaseType>),
+    Void,
+    Any,
 }
 
 
 #[derive(Debug, PartialEq)]
 pub enum IR<'a> {
+    Error,
     Drop,
-    LiteralInt(IRBaseType, i64),
-    LiteralFloat(IRBaseType, f64),
+    LitInt(IRBaseType, i64),
+    LitFloat(IRBaseType, f64),
+    LitStr(&'a str),
     Call(&'a str),
     GlobalGet(&'a str),
     GlovalSet(&'a str),

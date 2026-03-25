@@ -1,5 +1,7 @@
-use crate::ast::*;
-use crate::lexer::Token;
+use crate::{
+    ast::*,
+    lexer::Token,
+};
 use logos::Logos;
 use chumsky::{
     input::{Stream, ValueInput},
@@ -55,6 +57,18 @@ pub fn parse_str_top_level(input: &str) -> Result<TopLevel<'_>, Vec<Rich<'_, Tok
         .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
 
     top_level().parse(token_stream).into_result()
+}
+
+pub fn parse_str_program(input: &str) -> Result<Program<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
+    let token_iter = Token::lexer(input)
+        .spanned() .map(|(tok, span)| match tok {
+            Ok(tok) => (tok, span.into()),
+            Err(()) => (Token::Error, span.into()),
+        });
+    let token_stream = Stream::from_iter(token_iter)
+        .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
+
+    program().parse(token_stream).into_result()
 }
 
 
@@ -268,11 +282,11 @@ where
     let decl_block = select!{ Token::Type(s) => s }
     .then(
         choice((
-            ident()
+            select!{ Token::Ident(s) => s }
                 .then_ignore(just(Token::Assign))
                 .then(expr())
                 .map(|(i, exp)| (i, Some(exp))),
-            ident().map(|i| (i, None)),
+            select!{ Token::Ident(s) => (s, None) }
         ))
         .separated_by(just(Token::Comma))
         .allow_trailing()
@@ -292,7 +306,7 @@ fn const_decl_body<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    ident()
+    select!{ Token::Ident(s) => s }
         .then_ignore(just(Token::Equal))
         .then(expr())
         .separated_by(just(Token::Comma))
@@ -323,7 +337,7 @@ where
     choice((
         simple_type()
             .then(
-                ident()
+                select!{ Token::Ident(s) => s }
                 .separated_by(just(Token::Comma))
                 .at_least(1)
                 .collect::<Vec<_>>()
@@ -369,7 +383,7 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
-        // IMPORTgo env GOOS GOARCH
+        // IMPORT
         just(Token::Import)
             .ignore_then(
                 select!{Token::String(s) => s}
@@ -415,6 +429,15 @@ where
             .map(|(((((name, args), typ), export), decls), body)|
                 TopLevel::ProcDecl(name, args, typ, export, decls, body)),
     ))
+}
+
+
+fn program<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Program<'tokens>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    top_level().repeated().collect::<Vec<_>>()
 }
 
 
@@ -500,21 +523,17 @@ mod tests {
         Ok(TopLevel::VarDecl(vec!["V"],
                 vec![
                     ("I32", vec![
-                        (Ident {name: "foo", namespace: vec![]},
-                         None),
-                        (Ident {name: "bar", namespace: vec![]},
-                         Some(Expr::Lit(Literal::Int(3)))),
-                        (Ident {name: "baz", namespace: vec![]},
-                         None),
+                        ("foo", None),
+                        ("bar", Some(Expr::Lit(Literal::Int(3)))),
+                        ("baz", None),
                     ])
                 ])));
 
         assert_eq!(parse_str_top_level("VAR I32 foo, I64 bar := 7 END"),
         Ok(TopLevel::VarDecl(vec![],
                 vec![
-                    ("I32", vec![(Ident {name: "foo", namespace: vec![]}, None)]),
-                    ("I64", vec![(Ident {name: "bar", namespace: vec![]},
-                                  Some(Expr::Lit(Literal::Int(7))))]),
+                    ("I32", vec![("foo", None)]),
+                    ("I64", vec![("bar", Some(Expr::Lit(Literal::Int(7))))]),
                 ])));
     }
 
@@ -526,10 +545,8 @@ mod tests {
         assert_eq!(parse_str_top_level("CONST : re.ee foo = 3, bar = 7, END"),
         Ok(TopLevel::ConstDecl(vec!["re", "ee"],
                 vec![
-                    (Ident {name: "foo", namespace: vec![]},
-                     Expr::Lit(Literal::Int(3))),
-                    (Ident {name: "bar", namespace: vec![]},
-                     Expr::Lit(Literal::Int(7))),
+                    ("foo", Expr::Lit(Literal::Int(3))),
+                    ("bar", Expr::Lit(Literal::Int(7))),
                 ])));
     }
 
@@ -562,21 +579,18 @@ mod tests {
                 "),
         Ok(TopLevel::ProcDecl( Ident {name: "foo", namespace: vec!["bar"]},
                 vec![
-                    ("i32", vec![
-                        Ident {name: "a", namespace: vec![]},
-                        Ident {name: "b", namespace: vec![]}]),
-                    ("f64", vec![Ident {name: "c", namespace: vec![]}])],
+                    ("i32", vec!["a", "b"]),
+                    ("f64", vec!["c"])],
                 "i32", Some("exp"),
                 vec![
                     ProcDeclBlock::Var(vec![
-                        ("i32", vec![(Ident {name: "foo", namespace: vec![]}, None)]),
+                        ("i32", vec![("foo", None)]),
                     ]),
                     ProcDeclBlock::Const(vec![
-                        (Ident {name: "bar", namespace: vec![]},
-                         Expr::Lit(Literal::Int(1)))
+                        ("bar", Expr::Lit(Literal::Int(1)))
                     ]),
                     ProcDeclBlock::Var(vec![
-                        ("i64", vec![(Ident {name: "baz", namespace: vec![]}, None)]),
+                        ("i64", vec![("baz", None)]),
                     ]),
                 ], vec![
                     Stmt::Assign(Ident { name: "foo", namespace: vec![] },

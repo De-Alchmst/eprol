@@ -2,6 +2,7 @@ pub mod lexer;
 pub mod ast;
 pub mod parser;
 pub mod ir;
+pub mod semantic;
 // use lexer::Token;
 // use logos::Logos;
 

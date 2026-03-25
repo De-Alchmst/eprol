@@ -54,11 +54,11 @@ pub enum Stmt<'a> {
     Return(Expr<'a>),
 }
 
-pub type VarDeclBlock<'a> = (&'a str, Vec<(Ident<'a>, Option<Expr<'a>>)>);
-pub type ConstDeclBlock<'a> = Vec<(Ident<'a>, Expr<'a>)>;
+pub type VarDeclBlock<'a> = (&'a str, Vec<(&'a str, Option<Expr<'a>>)>);
+pub type ConstDeclBlock<'a> = Vec<(&'a str, Expr<'a>)>;
 
 // type, args
-pub type ProcArgs<'a> = (&'a str, Vec<Ident<'a>>);
+pub type ProcArgs<'a> = (&'a str, Vec<&'a str>);
 #[derive(Debug, PartialEq)]
 pub enum ProcDeclBlock<'a> {
     Var(Vec<VarDeclBlock<'a>>),
