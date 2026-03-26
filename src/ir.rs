@@ -25,9 +25,9 @@ pub enum IR<'a> {
     GlobalSet(&'a str),
     LocalGet(&'a str),
     LocalSet(&'a str),
+    Add,
+    Sub,
     // signedp
-    Add(bool),
-    Sub(bool),
     Mul(bool),
     Div(bool),
     Neg,
