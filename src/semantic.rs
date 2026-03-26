@@ -155,12 +155,34 @@ fn expr2ir<'a>(expr: Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList<'a>
 
         // BINOPS
         // left side determines result type
-        // Expr::Binop(op, left, right) => {
-        //     let mut left_ir = expr2ir(*left, scope.clone(), expects);
-        //     let left_type = irlist_type(&left_ir);
-        //     let mut right_ir = expr2ir(*right, scope, expects);
-        //     let right_type = irlist_type(&right_ir);
-        // }
+        // therefor right must match left and the entire outcome must then
+        // match expects
+        // TODO:: do binop at compiletime with literals
+        // TODO:: add unsigned support for binops
+        Expr::Binop(op, left, right) => {
+            let mut left_ir = expr2ir(*left, scope, expects.clone());
+            let left_type = irlist_type(&left_ir);
+            let mut right_ir = expr2ir(*right, scope, expects.clone());
+            let right_type = irlist_type(&right_ir);
+
+            // fix right type if needed
+            if right_type != left_type {
+                let last_right = right_ir.pop().unwrap_or((IRType::Error, IR::Error));
+                right_ir.extend(ir_resolve_types(last_right, left_type.clone()));
+            }
+
+            left_ir.extend(right_ir);
+            left_ir.extend(
+                ir_resolve_types((left_type, match op {
+                    Binop::Add => IR::Add(false),
+                    Binop::Sub => IR::Sub(false),
+                    Binop::Mul => IR::Mul(false),
+                    Binop::Div => IR::Div(false),
+                    _ => IR::Error,
+                }), expects)
+            );
+            left_ir
+        }
 
         _ => vec![(IRType::Error, IR::Error)]
     }
@@ -195,6 +217,7 @@ mod tests {
 
     #[test]
     fn test_expr2ir() {
+        // unop ident
         assert_eq!(
             expr2ir(
                 Expr::Unop(Unop::Neg, Box::new(
@@ -205,14 +228,35 @@ mod tests {
                 (IRType::F32, IR::Neg)
             ]
         );
+
+        // nonexistent ident
         assert_eq!(
             expr2ir(
                 Expr::Unop(Unop::Neg, Box::new(
-                        Expr::Ident(Ident {name: "wZ", namespace: vec!["n"]}))),
+                        Expr::Ident(Ident {name: "nonexistetn", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32),
             vec![
                 (IRType::Error, IR::Error),
                 (IRType::Error, IR::Neg)
+            ]
+        );
+
+        // binop and cast
+        assert_eq!(
+            expr2ir(
+                Expr::Binop(Binop::Add,
+                    Box::new(Expr::Ident(Ident {name: "x", namespace: vec![]})),
+                    Box::new(Expr::Binop(Binop::Mul,
+                        Box::new(Expr::Lit(Literal::Int(5))),
+                        Box::new(Expr::Lit(Literal::Int(9)))))),
+                get_test_scope(), IRType::I64),
+            vec![
+                (IRType::I32, IR::LocalGet("raw_x")),
+                (IRType::I64, IR::Cast(IRType::I32)),
+                (IRType::I64, IR::LitInt(5)),
+                (IRType::I64, IR::LitInt(9)),
+                (IRType::I64, IR::Mul(false)),
+                (IRType::I64, IR::Add(false)),
             ]
         )
     }
