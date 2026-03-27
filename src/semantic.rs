@@ -3,6 +3,7 @@ use crate::{
     ir::*,
     parser::parse_str_program,
     name_encoding::raw_name,
+    codegen::*,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -37,8 +38,7 @@ fn get_file_cache<'a>() -> &'static HashMap<&'a str, Scope<'a>> {
 pub static mut FOUND_ERRORS: bool = false;
 
 
-pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
-{
+pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let source = read_to_string(source_name).expect("Failed to read source file");
     let ast = parse_str_program(&source).expect("Failed to parse source file");
 
@@ -48,7 +48,9 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
         namespaces: HashMap::new(),
     };
 
-    let mut file_ir: TopLevelIRList = vec![];
+    // imports must be first
+    let mut import_ir: ImportIRList = vec![];
+    let mut _regular_ir: TopLevelIRList = vec![];
 
     // needs to process statements in specific order
     let mut imports_to_process: Vec<TopLevel> = vec![];
@@ -108,12 +110,17 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
                     _ => unreachable!()
                 }
 
-                file_ir.push(TopLevelIR::Import(outer, raw_name, typ));
+                import_ir.push((outer, raw_name, typ));
             } else {
                 // TODO: handle error of redeclaration
             }
         }
     }
+
+    print_wat_header();
+    print_import_ir(&import_ir);
+    print_wat_footer();
+
 
     
     output_files

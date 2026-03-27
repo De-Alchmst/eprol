@@ -5,18 +5,19 @@ pub mod ir;
 pub mod semantic;
 pub mod codegen;
 pub mod name_encoding;
-// use lexer::Token;
-// use logos::Logos;
 
-// use ariadne::{Color, Label, Report, ReportKind, Source};
-// use chumsky::{
-//     input::{Stream, ValueInput},
-//     prelude::*,
-// };
+use std::env;
+use semantic::analyse_and_compile;
 
 
 fn main() {
-    println!("Hello, world!");
+    let srgs = env::args().collect::<Vec<String>>();
+    if srgs.len() != 2 {
+        eprintln!("Usage: {} <source-file>", srgs[0]);
+        std::process::exit(1);
+    }
+
+    analyse_and_compile(&srgs[1]);
 }
 
 

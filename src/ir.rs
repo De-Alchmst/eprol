@@ -43,11 +43,12 @@ pub enum IR<'a> {
 #[derive(Debug, PartialEq)]
 pub enum TopLevelIR<'a> {
     GlobalVar(&'a str, IRList<'a>),
-    Import(Vec<&'a str>, String, IRType),
 }
+pub type ImportIR<'a> = (Vec<&'a str>, String, IRType);
 
 pub type IRList<'a> = Vec<(IRType, IR<'a>)>;
 pub type TopLevelIRList<'a> = Vec<TopLevelIR<'a>>;
+pub type ImportIRList<'a> = Vec<ImportIR<'a>>;
 
 
 pub fn asttype_to_irtype(s: Type) -> IRType {

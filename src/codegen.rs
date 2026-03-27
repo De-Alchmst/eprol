@@ -11,36 +11,35 @@ pub fn print_wat_footer() {
 }
 
 
-pub fn print_top_level_ir(lst: &TopLevelIRList) {
+pub fn print_import_ir(lst: &ImportIRList) {
     for ir in lst {
-        match ir {
-            TopLevelIR::Import(outer_name, raw_name, typ) => {
-                match typ {
-                    IRType::Func(arg_types, ret_type) => {
-                        println!("  (import {} (func {} {} {}))",
-                            outer_name.iter().map(|s| format!("\"{}\"", s))
-                                      .collect::<Vec<String>>().join(" "),
-                            raw_name,
-                            arg_types.iter().map(|t| format!("(param {})", t))
-                                      .collect::<Vec<String>>().join(" "),
-                            irtype_to_return(ret_type))
-                    },
+        let (outer_name, raw_name, typ) = ir;
+        {
+            match typ {
+                IRType::Func(arg_types, ret_type) => {
+                    println!(" (import {} (func {} {} {}))",
+                        outer_name.iter().map(|s| format!("\"{}\"", s))
+                                  .collect::<Vec<String>>().join(" "),
+                        raw_name,
+                        arg_types.iter().map(|t| format!("(param {})", t))
+                                  .collect::<Vec<String>>().join(" "),
+                        irtype_to_return(&*ret_type))
+                },
 
-                    _ => {
-                        println!("  (global {} (import {}) (mut {}))",
-                            raw_name,
-                            outer_name.iter().map(|s| format!("\"{}\"", s))
-                                      .collect::<Vec<String>>().join(" "),
-                            typ)
-                    }
+                _ => {
+                    println!(" (global {} (import {}) (mut {}))",
+                        raw_name,
+                        outer_name.iter().map(|s| format!("\"{}\"", s))
+                                  .collect::<Vec<String>>().join(" "),
+                        typ)
                 }
-            }
-
-            _ => {
-
             }
         }
     }
+}
+
+
+pub fn print_top_level_ir(lst: &TopLevelIRList) {
 }
 
 
