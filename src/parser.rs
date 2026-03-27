@@ -212,20 +212,49 @@ where
 
 
 fn simple_type<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, &'src str, extra::Err<Rich<'tokens, Token<'src>>>>
+) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    select!{Token::Type(s) => s}
+    select!{Token::Type(s) => match s {
+        "I32"|"i32" => Type::I32,
+        "I64"|"i64" => Type::I64,
+        "F32"|"f32" => Type::F32,
+        "F64"|"f64" => Type::F64,
+        _ => unreachable!(),
+    }}
 }
 
 
 fn import_type<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, &'src str, extra::Err<Rich<'tokens, Token<'src>>>>
+) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
+        // procedure type
+        simple_type()
+            // args
+            .then(
+                select!{ Token::Ident(s) => s }
+                .separated_by(just(Token::Comma))
+                .at_least(1)
+                .collect::<Vec<_>>()
+            )
+            // replace arg names with types
+            .map(|(typ, names)| names.iter().map(|_| typ.clone()).collect::<Vec<_>>())
+            .separated_by(just(Token::Comma))
+            .collect::<Vec<_>>()
+            .delimited_by(just(Token::LRound), just(Token::RRound))
+            // optional return type
+            .then(choice((
+                just(Token::Colon).ignore_then(simple_type()),
+                empty().to(Type::Void),
+            )))
+            .map(|(arg_types, typ)|
+                Type::Proc(arg_types.into_iter().flatten().collect::<Vec<_>>(),
+                           Box::new(typ))),
+
         simple_type(),
     ))
 }
@@ -279,19 +308,19 @@ fn var_decl_body<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    let decl_block = select!{ Token::Type(s) => s }
-    .then(
-        choice((
-            select!{ Token::Ident(s) => s }
-                .then_ignore(just(Token::Assign))
-                .then(expr())
-                .map(|(i, exp)| (i, Some(exp))),
-            select!{ Token::Ident(s) => (s, None) }
-        ))
-        .separated_by(just(Token::Comma))
-        .allow_trailing()
-        .collect::<Vec<_>>()
-    );
+    let decl_block = simple_type()
+        .then(
+            choice((
+                select!{ Token::Ident(s) => s }
+                    .then_ignore(just(Token::Assign))
+                    .then(expr())
+                    .map(|(i, exp)| (i, Some(exp))),
+                select!{ Token::Ident(s) => (s, None) }
+            ))
+            .separated_by(just(Token::Comma))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+        );
 
     let decl_body = decl_block
         .repeated()
@@ -419,7 +448,7 @@ where
             .then(proc_args_decl())
             .then(choice((
                 just(Token::Colon).ignore_then(simple_type()),
-                empty().to("void"),
+                empty().to(Type::Void),
             )))
             .then(optional_export())
             .then(proc_decl_blocks())
@@ -511,7 +540,14 @@ mod tests {
     fn import() {
         assert_eq!(parse_str_top_level("IMPORT \"foo\" \"bar\" AS a : b I32"),
         Ok(TopLevel::Import(vec!["foo", "bar"],
-                            Ident { name: "a", namespace: vec!["b"] }, "I32")))
+                            Ident { name: "a", namespace: vec!["b"] },
+                            Type::I32)));
+
+        assert_eq!(parse_str_top_level(
+                "IMPORT \"foo\" AS foo (I32 a, b, F32 c): I32"),
+            Ok(TopLevel::Import(vec!["foo"],
+                                Ident { name: "foo", namespace: vec![] },
+                                Type::Proc(vec![Type::I32, Type::I32, Type::F32], Box::new(Type::I32)))));
     }
 
     #[test]
@@ -522,7 +558,7 @@ mod tests {
         assert_eq!(parse_str_top_level("VAR : V I32 foo, bar := 3, baz END"),
         Ok(TopLevel::VarDecl(vec!["V"],
                 vec![
-                    ("I32", vec![
+                    (Type::I32, vec![
                         ("foo", None),
                         ("bar", Some(Expr::Lit(Literal::Int(3)))),
                         ("baz", None),
@@ -532,8 +568,8 @@ mod tests {
         assert_eq!(parse_str_top_level("VAR I32 foo, I64 bar := 7 END"),
         Ok(TopLevel::VarDecl(vec![],
                 vec![
-                    ("I32", vec![("foo", None)]),
-                    ("I64", vec![("bar", Some(Expr::Lit(Literal::Int(7))))]),
+                    (Type::I32, vec![("foo", None)]),
+                    (Type::I64, vec![("bar", Some(Expr::Lit(Literal::Int(7))))]),
                 ])));
     }
 
@@ -579,18 +615,18 @@ mod tests {
                 "),
         Ok(TopLevel::ProcDecl( Ident {name: "foo", namespace: vec!["bar"]},
                 vec![
-                    ("i32", vec!["a", "b"]),
-                    ("f64", vec!["c"])],
-                "i32", Some("exp"),
+                    (Type::I32, vec!["a", "b"]),
+                    (Type::F64, vec!["c"])],
+                Type::I32, Some("exp"),
                 vec![
                     ProcDeclBlock::Var(vec![
-                        ("i32", vec![("foo", None)]),
+                        (Type::I32, vec![("foo", None)]),
                     ]),
                     ProcDeclBlock::Const(vec![
                         ("bar", Expr::Lit(Literal::Int(1)))
                     ]),
                     ProcDeclBlock::Var(vec![
-                        ("i64", vec![("baz", None)]),
+                        (Type::I64, vec![("baz", None)]),
                     ]),
                 ], vec![
                     Stmt::Assign(Ident { name: "foo", namespace: vec![] },
@@ -600,7 +636,7 @@ mod tests {
 
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
         Ok(TopLevel::ProcDecl(Ident {name: "foo", namespace: vec![]},
-                vec![], "void", None, vec![], vec![
+                vec![], Type::Void, None, vec![], vec![
                     Stmt::Assign(Ident { name: "i", namespace: vec![] },
                         Expr::Lit(Literal::Int(1)))
                 ])))

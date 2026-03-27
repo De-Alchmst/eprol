@@ -4,6 +4,15 @@ pub struct Ident<'a> {
     pub namespace: Vec<&'a str>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum Type {
+    I32, I64,
+    F32, F64,
+    Void,
+    // args, return
+    Proc(Vec<Type>, Box<Type>),
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Binop {
     Add,
@@ -54,11 +63,11 @@ pub enum Stmt<'a> {
     Return(Expr<'a>),
 }
 
-pub type VarDeclBlock<'a> = (&'a str, Vec<(&'a str, Option<Expr<'a>>)>);
+pub type VarDeclBlock<'a> = (Type, Vec<(&'a str, Option<Expr<'a>>)>);
 pub type ConstDeclBlock<'a> = Vec<(&'a str, Expr<'a>)>;
 
 // type, args
-pub type ProcArgs<'a> = (&'a str, Vec<&'a str>);
+pub type ProcArgs<'a> = (Type, Vec<&'a str>);
 #[derive(Debug, PartialEq)]
 pub enum ProcDeclBlock<'a> {
     Var(Vec<VarDeclBlock<'a>>),
@@ -70,9 +79,9 @@ pub enum TopLevel<'a> {
     ConstDecl(Vec<&'a str>, ConstDeclBlock<'a>),
     VarDecl(Vec<&'a str>, Vec<VarDeclBlock<'a>>),
     // name, args, return type, export name, decls, body
-    ProcDecl(Ident<'a>, Vec<ProcArgs<'a>>, &'a str, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
+    ProcDecl(Ident<'a>, Vec<ProcArgs<'a>>, Type, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
     // outer name, inner name, type
-    Import(Vec<&'a str>, Ident<'a>, &'a str),
+    Import(Vec<&'a str>, Ident<'a>, Type),
 }
 
 pub type Program<'a> = Vec<TopLevel<'a>>;
