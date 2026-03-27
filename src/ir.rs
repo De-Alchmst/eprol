@@ -1,4 +1,5 @@
 use crate::ast::Type;
+use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum IRType {
@@ -67,6 +68,27 @@ pub fn irlist_type<'a>(lst: &IRList<'a>) -> IRType {
     match lst.last() {
         Some((t, _)) => t.clone(),
         None => IRType::Void,
+    }
+}
+
+
+impl fmt::Display for IRType  {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IRType::Int => write!(f, "int"),
+            IRType::I32 => write!(f, "i32"),
+            IRType::I64 => write!(f, "i64"),
+            IRType::Float => write!(f, "float"),
+            IRType::F32 => write!(f, "f32"),
+            IRType::F64 => write!(f, "f64"),
+            IRType::Func(args, ret) => {
+                let args_str = args.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+                write!(f, "({}) -> {}", args_str, ret)
+            },
+            IRType::Void => write!(f, "void"),
+            IRType::Any => write!(f, "any"),
+            IRType::Error => write!(f, "error"),
+        }
     }
 }
 

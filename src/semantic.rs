@@ -12,17 +12,17 @@ use std::{
 
 // types used for Scope representation
 #[derive(Clone)]
-enum LitVal<'a> { Int(i64), Float(f64), Str(&'a str) }
+enum LitVal { Int(i64), Float(f64), Str(String) }
 #[derive(Clone)]
-enum ScopeItem<'a> {
+enum ScopeItem {
     Var(String, IRType), // raw_name, type
-    Const(LitVal<'a>), // value
+    Const(LitVal), // value
     Proc(String, Vec<IRType>, IRType), // raw_name, arg types, return type
     None, // used as a return value
 }
 
 struct Scope<'a> {
-    contents: HashMap<&'a str, ScopeItem<'a>>,
+    contents: HashMap<&'a str, ScopeItem>,
     namespaces: HashMap<&'a str, Scope<'a>>,
 }
 
@@ -66,8 +66,10 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
                 for (name, expr) in decls {
                     let idnt = Ident {name, namespace: nmspc.clone()};
                     let (val, _localp) = scope.search(&idnt);
+
                     if let ScopeItem::None = val {
                         let expr_ir = expr2ir(&expr, &scope, IRType::Any);
+                        // if expression is literal
                         if let Some(lit_val) = irlist_lit(&expr_ir) {
                             scope.insert(&idnt, ScopeItem::Const(lit_val));
                         } else {
@@ -90,15 +92,23 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
             if let ScopeItem::None = val {
                 let typ = asttype_to_irtype(typ);
                 let raw_name = raw_name(&inner, source_name);
+                
                 match typ.clone() {
                     IRType::Func(arg_types, ret_type) => {
-                        file_ir.push(TopLevelIR::Import(outer, raw_name, typ));
+                        scope.insert(&inner, ScopeItem::Proc(raw_name.clone(),
+                                     arg_types, *ret_type));
+                    },
+
+                    IRType::I32 | IRType::I64 | IRType::F32 | IRType::F64 => {
+                        scope.insert(&inner, ScopeItem::Var(raw_name.clone(),
+                                     typ.clone()));
                     },
                     
-                    _ => {
-
-                    }
+                    // void
+                    _ => unreachable!()
                 }
+
+                file_ir.push(TopLevelIR::Import(outer, raw_name, typ));
             } else {
                 // TODO: handle error of redeclaration
             }
@@ -110,8 +120,8 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
 }
 
 
-impl Scope<'_> {
-    fn search<'a>(&'a self, ident: &Ident<'a>) -> (ScopeItem<'a>, bool) {
+impl<'a> Scope<'a> {
+    fn search(&self, ident: &Ident<'a>) -> (ScopeItem, bool) {
         let mut localp = true;
         let mut current_scope = self;
 
@@ -133,39 +143,35 @@ impl Scope<'_> {
     }
 
 
-    fn insert<'a>(&'a mut self, ident: &Ident<'a>, item: ScopeItem) -> bool {
+    fn insert(&mut self, ident: &Ident<'a>, item: ScopeItem) -> bool {
         let mut current_scope = self;
 
-        // step through namespaces to find required scope, return Error if not found
+        // step through namespaces to find required scope, create if not found
         for i in 0..ident.namespace.len() {
-            match current_scope.namespaces.get(ident.namespace[i]) {
-                Some(ns) => {
-                    current_scope = &mut ns;
-                },
-                None => {
-                    self.namespaces.insert(ident.namespace[i], Scope {
-                        contents: HashMap::new(),
-                        namespaces: HashMap::new(),
-                    });
-                }
+            if !current_scope.namespaces.contains_key(ident.namespace[i]) {
+                current_scope.namespaces.insert(ident.namespace[i], Scope {
+                    contents: HashMap::new(),
+                    namespaces: HashMap::new(),
+                });
             }
+            current_scope = current_scope.namespaces.get_mut(ident.namespace[i]).unwrap();
         }
 
-        if let Some(_) = current_scope.contents.get(ident.name) {
+        if current_scope.contents.contains_key(ident.name) {
             return false;
         } else {
-            self.contents.insert(ident.name, item);
+            current_scope.contents.insert(ident.name, item);
             true
         }
     }
 }
 
 
-fn irlist_lit<'a>(ir: &IRList<'a>) -> Option<LitVal<'a>> {
+fn irlist_lit<'a>(ir: &IRList<'a>) -> Option<LitVal> {
     match ir.last() {
         Some((_, IR::LitInt(x))) => Some(LitVal::Int(*x)),
         Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
-        Some((_, IR::LitStr(s))) => Some(LitVal::Str(s)),
+        Some((_, IR::LitStr(s))) => Some(LitVal::Str(s.to_string())),
         _ => None
     }
 }
@@ -211,20 +217,21 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &'a Scope<'a>, expects: IRType) -> IRList
         // IDENTS
         Expr::Ident(idnt) => {
             let (val, localp) = scope.search(idnt);
-            match val {
+            match &val {
                 // constants -> place as literals
-                ScopeItem::Const(val) => match val {
-                    LitVal::Int(x) => expr2ir(&Expr::Lit(Literal::Int(x)), scope, expects),
-                    LitVal::Float(x) => expr2ir(&Expr::Lit(Literal::Float(x)), scope, expects),
-                    LitVal::Str(s) => expr2ir(&Expr::Lit(Literal::Str(s)), scope, expects),
+                ScopeItem::Const(lit_val) => match lit_val {
+                    LitVal::Int(x) => expr2ir(&Expr::Lit(Literal::Int(*x)), scope, expects),
+                    LitVal::Float(x) => expr2ir(&Expr::Lit(Literal::Float(*x)), scope, expects),
+                    // String constants not supported yet - would need owned strings in IR
+                    LitVal::Str(_) => vec![(IRType::Error, IR::Error)],
                 },
 
                 // variables -> place and cast if needed
                 ScopeItem::Var(raw_name, var_type) => {
                     let expr = if localp {
-                        (var_type, IR::LocalGet(raw_name))
+                        (var_type.clone(), IR::LocalGet(raw_name.clone()))
                     } else {
-                        (var_type, IR::GlobalGet(raw_name))
+                        (var_type.clone(), IR::GlobalGet(raw_name.clone()))
                     };
                     ir_resolve_types(expr, expects)
                 },
