@@ -22,11 +22,11 @@ pub enum IR<'a> {
     LitInt(i64),
     LitFloat(f64),
     LitStr(&'a str),
-    Call(&'a str),
-    GlobalGet(&'a str),
-    GlobalSet(&'a str),
-    LocalGet(&'a str),
-    LocalSet(&'a str),
+    Call(String),
+    GlobalGet(String),
+    GlobalSet(String),
+    LocalGet(String),
+    LocalSet(String),
     Add,
     Sub,
     // signedp
@@ -42,7 +42,7 @@ pub enum IR<'a> {
 #[derive(Debug, PartialEq)]
 pub enum TopLevelIR<'a> {
     GlobalVar(&'a str, IRList<'a>),
-    Import(Vec<&'a str>, &'a str, IRType),
+    Import(Vec<&'a str>, String, IRType),
 }
 
 pub type IRList<'a> = Vec<(IRType, IR<'a>)>;

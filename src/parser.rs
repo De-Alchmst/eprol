@@ -547,7 +547,8 @@ mod tests {
                 "IMPORT \"foo\" AS foo (I32 a, b, F32 c): I32"),
             Ok(TopLevel::Import(vec!["foo"],
                                 Ident { name: "foo", namespace: vec![] },
-                                Type::Proc(vec![Type::I32, Type::I32, Type::F32], Box::new(Type::I32)))));
+                                Type::Proc(vec![Type::I32, Type::I32, Type::F32],
+                                           Box::new(Type::I32)))));
     }
 
     #[test]

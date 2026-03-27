@@ -2,6 +2,7 @@ use crate::{
     ast::*,
     ir::*,
     parser::parse_str_program,
+    name_encoding::raw_name,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -14,9 +15,9 @@ use std::{
 enum LitVal<'a> { Int(i64), Float(f64), Str(&'a str) }
 #[derive(Clone)]
 enum ScopeItem<'a> {
-    Var(&'a str, IRType), // raw_name, type
+    Var(String, IRType), // raw_name, type
     Const(LitVal<'a>), // value
-    Proc(&'a str, Vec<IRType>, IRType), // raw_name, arg types, return type
+    Proc(String, Vec<IRType>, IRType), // raw_name, arg types, return type
     None, // used as a return value
 }
 
@@ -47,7 +48,7 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
         namespaces: HashMap::new(),
     };
 
-    let mut file_ir: IRList = vec![];
+    let mut file_ir: TopLevelIRList = vec![];
 
     // needs to process statements in specific order
     let mut imports_to_process: Vec<TopLevel> = vec![];
@@ -61,14 +62,14 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
             TopLevel::Import(_, _, _) => imports_to_process.push(top_level),
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
-            TopLevel::ConstDecl(_nmspc, decls) => {
+            TopLevel::ConstDecl(nmspc, decls) => {
                 for (name, expr) in decls {
-                    let (val, _localp) = search_in_scope(&scope, &Ident
-                                                        {name, namespace: vec![]});
+                    let idnt = Ident {name, namespace: nmspc.clone()};
+                    let (val, _localp) = scope.search(&idnt);
                     if let ScopeItem::None = val {
                         let expr_ir = expr2ir(&expr, &scope, IRType::Any);
                         if let Some(lit_val) = irlist_lit(&expr_ir) {
-                            scope.contents.insert(name, ScopeItem::Const(lit_val));
+                            scope.insert(&idnt, ScopeItem::Const(lit_val));
                         } else {
                             // TODO: handle error on non-literal const value
                         }
@@ -80,12 +81,24 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
         }
     }
 
+
     // IMPORTS
     for top_level in imports_to_process {
         if let TopLevel::Import(outer, inner, typ) = top_level {
-            let (val, _localp) = search_in_scope(&scope, &inner);
+            let (val, _localp) = scope.search(&inner);
+
             if let ScopeItem::None = val {
                 let typ = asttype_to_irtype(typ);
+                let raw_name = raw_name(&inner, source_name);
+                match typ.clone() {
+                    IRType::Func(arg_types, ret_type) => {
+                        file_ir.push(TopLevelIR::Import(outer, raw_name, typ));
+                    },
+                    
+                    _ => {
+
+                    }
+                }
             } else {
                 // TODO: handle error of redeclaration
             }
@@ -97,24 +110,53 @@ pub fn analyse_and_compile<'a>(source_name: &'a str) -> HashSet<&'a str>
 }
 
 
-fn search_in_scope<'a>(scope: &Scope<'a>, ident: &Ident<'a>) -> (ScopeItem<'a>, bool) {
-    let mut localp = true;
-    let mut current_scope = scope;
+impl Scope<'_> {
+    fn search<'a>(&'a self, ident: &Ident<'a>) -> (ScopeItem<'a>, bool) {
+        let mut localp = true;
+        let mut current_scope = self;
 
-    // step through namespaces to find required scope, return Error if not found
-    for i in 0..ident.namespace.len() {
-        match current_scope.namespaces.get(ident.namespace[i]) {
-            Some(ns) => {
-                current_scope = &ns;
-                localp = false;
-            },
-            None => return (ScopeItem::None, false)
+        // step through namespaces to find required scope, return Error if not found
+        for i in 0..ident.namespace.len() {
+            match current_scope.namespaces.get(ident.namespace[i]) {
+                Some(ns) => {
+                    current_scope = &ns;
+                    localp = false;
+                },
+                None => return (ScopeItem::None, false)
+            }
+        }
+        if let Some(var) = current_scope.contents.get(ident.name) {
+            (var.clone(), localp)
+        } else {
+            (ScopeItem::None, false)
         }
     }
-    if let Some(var) = current_scope.contents.get(ident.name) {
-        (var.clone(), localp)
-    } else {
-        (ScopeItem::None, false)
+
+
+    fn insert<'a>(&'a mut self, ident: &Ident<'a>, item: ScopeItem) -> bool {
+        let mut current_scope = self;
+
+        // step through namespaces to find required scope, return Error if not found
+        for i in 0..ident.namespace.len() {
+            match current_scope.namespaces.get(ident.namespace[i]) {
+                Some(ns) => {
+                    current_scope = &mut ns;
+                },
+                None => {
+                    self.namespaces.insert(ident.namespace[i], Scope {
+                        contents: HashMap::new(),
+                        namespaces: HashMap::new(),
+                    });
+                }
+            }
+        }
+
+        if let Some(_) = current_scope.contents.get(ident.name) {
+            return false;
+        } else {
+            self.contents.insert(ident.name, item);
+            true
+        }
     }
 }
 
@@ -130,7 +172,7 @@ fn irlist_lit<'a>(ir: &IRList<'a>) -> Option<LitVal<'a>> {
 
 
 // TODO: handle errors somehow
-fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList<'a> {
+fn expr2ir<'a>(expr: &Expr<'a>, scope: &'a Scope<'a>, expects: IRType) -> IRList<'a> {
     match expr {
         // LITERALS
         Expr::Lit(lit) => match lit {
@@ -168,7 +210,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList<'a
 
         // IDENTS
         Expr::Ident(idnt) => {
-            let (val, localp) = search_in_scope(&scope, idnt);
+            let (val, localp) = scope.search(idnt);
             match val {
                 // constants -> place as literals
                 ScopeItem::Const(val) => match val {
@@ -230,7 +272,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList<'a
 
         // PROC CALLS
         Expr::ProcCall(idnt, args) => {
-            let (val, _localp) = search_in_scope(&scope, idnt);
+            let (val, _localp) = scope.search(idnt);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
                     // check args length
@@ -269,15 +311,15 @@ mod tests {
                 contents: HashMap::new(),
                 namespaces: HashMap::new(),
             };
-            scope.contents.insert("x", ScopeItem::Var("raw_x", IRType::I32));
+            scope.contents.insert("x", ScopeItem::Var("raw_x".to_string(), IRType::I32));
             scope.contents.insert("y", ScopeItem::Const(LitVal::Int(42)));
-            scope.contents.insert("f", ScopeItem::Proc("raw_f", vec![IRType::I32, IRType::F64], IRType::F64));
+            scope.contents.insert("f", ScopeItem::Proc("raw_f".to_string(), vec![IRType::I32, IRType::F64], IRType::F64));
 
             let mut nmspc_scope = Scope {
                 contents: HashMap::new(),
                 namespaces: HashMap::new(),
             };
-            nmspc_scope.contents.insert("z", ScopeItem::Var("raw_z", IRType::F64));
+            nmspc_scope.contents.insert("z", ScopeItem::Var("raw_z".to_string(), IRType::F64));
             nmspc_scope.contents.insert("w", ScopeItem::Const(LitVal::Float(3.7)));
             scope.namespaces.insert("n", nmspc_scope);
 
@@ -323,7 +365,7 @@ mod tests {
                         Box::new(Expr::Lit(Literal::Int(9)))))),
                 get_test_scope(), IRType::I64),
             vec![
-                (IRType::I32, IR::LocalGet("raw_x")),
+                (IRType::I32, IR::LocalGet("raw_x".to_string())),
                 (IRType::I64, IR::Cast(IRType::I32)),
                 (IRType::I64, IR::LitInt(5)),
                 (IRType::I64, IR::LitInt(9)),
@@ -345,7 +387,7 @@ mod tests {
             vec![
                 (IRType::I32, IR::LitInt(5)),
                 (IRType::F64, IR::LitFloat(3.7)),
-                (IRType::F64, IR::Call("raw_f")),
+                (IRType::F64, IR::Call("raw_f".to_string())),
                 (IRType::F32, IR::Cast(IRType::F64))
             ]
         )

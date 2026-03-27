@@ -4,6 +4,7 @@ pub mod parser;
 pub mod ir;
 pub mod semantic;
 pub mod codegen;
+pub mod name_encoding;
 // use lexer::Token;
 // use logos::Logos;
 
