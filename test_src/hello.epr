@@ -6,3 +6,5 @@ I32 bar, baz,
     bax := 42
 F64 bach := 4.2
 END
+
+VAR F32 bar := 10 END

@@ -17,12 +17,12 @@ pub enum IRType {
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum IR<'a> {
+pub enum IR {
     Error,
     Drop,
     LitInt(i64),
     LitFloat(f64),
-    LitStr(&'a str),
+    LitStr(String),
     Call(String),
     GlobalGet(String),
     GlobalSet(String),
@@ -41,13 +41,13 @@ pub enum IR<'a> {
 
 
 #[derive(Debug, PartialEq)]
-pub enum TopLevelIR<'a> {
-    GlobalVar(String, (IRType, IR<'a>)),
+pub enum TopLevelIR {
+    GlobalVar(String, (IRType, IR)),
 }
 pub type ImportIR<'a> = (Vec<&'a str>, String, IRType);
 
-pub type IRList<'a> = Vec<(IRType, IR<'a>)>;
-pub type TopLevelIRList<'a> = Vec<TopLevelIR<'a>>;
+pub type IRList = Vec<(IRType, IR)>;
+pub type TopLevelIRList = Vec<TopLevelIR>;
 pub type ImportIRList<'a> = Vec<ImportIR<'a>>;
 
 
@@ -65,7 +65,7 @@ pub fn asttype_to_irtype(s: Type) -> IRType {
 }
 
 
-pub fn irlist_type<'a>(lst: &IRList<'a>) -> IRType {
+pub fn irlist_type(lst: &IRList) -> IRType {
     match lst.last() {
         Some((t, _)) => t.clone(),
         None => IRType::Void,
@@ -94,7 +94,7 @@ impl fmt::Display for IRType  {
 }
 
 
-pub fn default_irtype_val<'a, 'b>(typ: &'a IRType) -> (IRType, IR<'b>) {
+pub fn default_irtype_val(typ: &IRType) -> (IRType, IR) {
     match typ {
         IRType::Int | IRType::Any | IRType::I32 | IRType::I64
             => (typ.clone(), IR::LitInt(0)),
@@ -108,7 +108,7 @@ pub fn default_irtype_val<'a, 'b>(typ: &'a IRType) -> (IRType, IR<'b>) {
 
 
 // insert automatic cast where needed
-pub fn ir_resolve_types<'a>(got: (IRType, IR<'a>), expected: IRType) -> IRList<'a> {
+pub fn ir_resolve_types(got: (IRType, IR), expected: IRType) -> IRList {
     let current = got.0.clone();
     match expected {
         IRType::I32 => match current {

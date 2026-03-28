@@ -17,12 +17,12 @@ pub fn print_import_ir(lst: &ImportIRList) {
         {
             match typ {
                 IRType::Func(arg_types, ret_type) => {
-                    println!(" (import {} (func {} {} {}))",
+                    println!(" (import {} (func {} (param {}) {}))",
                         outer_name.iter().map(|s| format!("\"{}\"", s))
                                   .collect::<Vec<String>>().join(" "),
                         raw_name,
-                        arg_types.iter().map(|t| format!("(param {})", t))
-                                  .collect::<Vec<String>>().join(" "),
+                        arg_types.iter().map(|t| t.to_string())
+                                 .collect::<Vec<String>>().join(" "),
                         irtype_to_return(&*ret_type))
                 },
 
@@ -52,7 +52,7 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
 }
 
 
-pub fn print_wat_ir<'a>(lst: &'a IRList<'a>) {
+pub fn print_wat_ir(lst: &IRList) {
     for (_typ, ir) in lst {
         match ir {
             _ => {}

@@ -118,29 +118,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
 
-    // VARS - Two-pass approach to avoid borrow conflicts
-    for top_level in &vars_to_process {
-        if let TopLevel::VarDecl(nmspc, decls) = top_level {
-            for (typ, vals) in decls {
-                let typ = asttype_to_irtype(typ.clone());
-
-                // PASS 1: Insert all variables into scope (mutable borrows only)
-                for (name, _) in vals {
-                    let idnt = Ident {name: *name, namespace: nmspc.clone()};
-                    
-                    if !matches!(scope.search(&idnt).0, ScopeItem::None) {
-                        // TODO: handle error of redeclaration
-                        continue;
-                    }
-                    
-                    let raw_name = raw_name(&idnt, source_name);
-                    scope.insert(&idnt, ScopeItem::Var(raw_name, typ.clone()));
-                }
-            }
-        }
-    }
-
-    // PASS 2: Generate IR (immutable borrows only)
+    // VARS
     for top_level in vars_to_process {
         if let TopLevel::VarDecl(nmspc, decls) = top_level {
             for (typ, vals) in decls {
@@ -148,24 +126,31 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
                 for (name, init_expr) in vals {
                     let idnt = Ident {name, namespace: nmspc.clone()};
-                    
-                    // Look up the variable we inserted in pass 1
-                    if let (ScopeItem::Var(raw_name, var_type), _) = scope.search(&idnt) {
-                        let init_ir = match init_expr {
-                            None => default_irtype_val(&var_type),
-                            Some(expr) => {
-                                let expr_ir = expr2ir(&expr, &scope, typ.clone());
-                                if let Some(_) = irlist_lit(&expr_ir) {
-                                    expr_ir.last().unwrap().clone()
-                                } else {
-                                    // TODO: handle non-literal var initializer
-                                    continue;
-                                }
-                            }
-                        };
+                    let raw_name = raw_name(&idnt, source_name);
 
-                        regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
+                    // Already in scope
+                    if !matches!(scope.search(&idnt).0, ScopeItem::None) {
+                        // TODO: handle error of redeclaration
+                        continue;
                     }
+
+                    // Pre-compute initialization IR (immutable borrow of scope)
+                    let init_ir = match init_expr {
+                        None => default_irtype_val(&typ),
+                        Some(expr) => {
+                            let expr_ir = expr2ir(&expr, &scope, typ.clone());
+                            if let Some(_) = irlist_lit(&expr_ir) {
+                                expr_ir.last().unwrap().clone()
+                            } else {
+                                // TODO: handle non-literal var initializer
+                                continue;
+                            }
+                        }
+                    };
+
+                    scope.insert(&idnt, ScopeItem::Var(raw_name.clone(),
+                                                       typ.clone()));
+                    regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
                 }
             }
         }
@@ -229,18 +214,18 @@ impl<'a> Scope<'a> {
 }
 
 
-fn irlist_lit<'a>(ir: &IRList<'a>) -> Option<LitVal> {
+fn irlist_lit(ir: &IRList) -> Option<LitVal> {
     match ir.last() {
         Some((_, IR::LitInt(x))) => Some(LitVal::Int(*x)),
         Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
-        Some((_, IR::LitStr(s))) => Some(LitVal::Str(s.to_string())),
+        Some((_, IR::LitStr(s))) => Some(LitVal::Str(s.clone())),
         _ => None
     }
 }
 
 
 // TODO: handle errors somehow
-fn expr2ir<'a>(expr: &Expr<'a>, scope: &'a Scope<'a>, expects: IRType) -> IRList<'a> {
+fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList {
     match expr {
         // LITERALS
         Expr::Lit(lit) => match lit {
@@ -258,8 +243,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &'a Scope<'a>, expects: IRType) -> IRList
             },
             // TODO: handle strings like a normal person
             Literal::Str(s) => match expects {
-                IRType::Int | IRType::I32 => vec![(IRType::I32, IR::LitStr(s))],
-                IRType::I64 => vec![(IRType::I64, IR::LitStr(s))],
+                IRType::Int | IRType::I32 => vec![(IRType::I32, IR::LitStr(s.to_string()))],
+                IRType::I64 => vec![(IRType::I64, IR::LitStr(s.to_string()))],
                 _ => vec![(IRType::Error, IR::Error)]
             },
         },
