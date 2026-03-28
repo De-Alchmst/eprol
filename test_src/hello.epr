@@ -1,2 +1,7 @@
 IMPORT "console" "log" AS log : console (I32 sre, len)
 IMPORT "js" "var1" AS var1 I32
+
+VAR : foo
+I32 bar, baz
+F64 bax
+END

@@ -16,7 +16,7 @@ pub enum IRType {
 }
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum IR<'a> {
     Error,
     Drop,
@@ -42,7 +42,7 @@ pub enum IR<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum TopLevelIR<'a> {
-    GlobalVar(&'a str, IRList<'a>),
+    GlobalVar(String, (IRType, IR<'a>)),
 }
 pub type ImportIR<'a> = (Vec<&'a str>, String, IRType);
 
@@ -90,6 +90,19 @@ impl fmt::Display for IRType  {
             IRType::Any => write!(f, "any"),
             IRType::Error => write!(f, "error"),
         }
+    }
+}
+
+
+pub fn default_irtype_val<'a, 'b>(typ: &'a IRType) -> (IRType, IR<'b>) {
+    match typ {
+        IRType::Int | IRType::Any | IRType::I32 | IRType::I64
+            => (typ.clone(), IR::LitInt(0)),
+        IRType::Float | IRType::F32 | IRType::F64
+            => (typ.clone(), IR::LitFloat(0.0)),
+        IRType::Func(_, _) => (typ.clone(), IR::Error),
+        IRType::Void => (typ.clone(), IR::Drop),
+        IRType::Error => (typ.clone(), IR::Error),
     }
 }
 

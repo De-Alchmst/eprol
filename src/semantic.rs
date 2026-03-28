@@ -50,7 +50,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
     // imports must be first
     let mut import_ir: ImportIRList = vec![];
-    let mut _regular_ir: TopLevelIRList = vec![];
+    let mut regular_ir: TopLevelIRList = vec![];
 
     // needs to process statements in specific order
     let mut imports_to_process: Vec<TopLevel> = vec![];
@@ -117,8 +117,39 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
         }
     }
 
+
+    // VARS
+    for top_level in vars_to_process {
+        if let TopLevel::VarDecl(nmspc, decls) = top_level {
+            for (typ, vals) in decls {
+                let typ = asttype_to_irtype(typ);
+                for (name, init_expr) in vals {
+                    let idnt = Ident {name, namespace: nmspc.clone()};
+                    let raw_name = raw_name(&idnt, source_name);
+                    if let (ScopeItem::None, _) = scope.search(&idnt) {
+                        scope.insert(&idnt, ScopeItem::Var(raw_name.clone(), typ.clone()));
+
+                        match init_expr {
+                            None => {
+                                regular_ir.push(TopLevelIR::GlobalVar(raw_name,
+                                                      default_irtype_val(&typ)));
+                            },
+
+                            Some(expr) => {
+
+                            }
+                        }
+                    } else {
+                        // TODO: handle error of redeclaration
+                    }
+                }
+            }
+        }
+    }
+
     print_wat_header();
     print_import_ir(&import_ir);
+    print_top_level_ir(&regular_ir);
     print_wat_footer();
 
 

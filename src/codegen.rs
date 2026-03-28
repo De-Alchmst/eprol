@@ -40,6 +40,15 @@ pub fn print_import_ir(lst: &ImportIRList) {
 
 
 pub fn print_top_level_ir(lst: &TopLevelIRList) {
+    for ir in lst {
+        match ir {
+            TopLevelIR::GlobalVar(raw_name, val) => {
+                let (typ, _) = val;
+                println!(" (global {} (mut {}) {})",
+                         raw_name, typ, ir_to_str(val))
+            }
+        }
+    }
 }
 
 
@@ -56,5 +65,16 @@ fn irtype_to_return(typ: &IRType) -> String {
     match typ {
         IRType::Void => String::from(""),
         _ => format!("(result {})", typ)
+    }
+}
+
+fn ir_to_str(ir: &(IRType, IR)) -> String {
+    let (typ, val) = ir;
+    match val {
+        IR::LitInt(i) => format!("{}.const {}", typ, i),
+        IR::LitFloat(f) => format!("{}.const {}", typ, f),
+        IR::Drop => format!("drop"),
+        IR::Call(raw_name) => format!("call {}", raw_name),
+        _ => unimplemented!()
     }
 }
