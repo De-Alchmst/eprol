@@ -2,7 +2,10 @@ use crate::{
     ast::*,
     ir::*,
     parser::parse_str_program,
-    name_encoding::raw_name,
+    name_encoding::{
+        raw_name,
+        raw_arg_name,
+    },
     codegen::*,
 };
 use std::{
@@ -22,6 +25,7 @@ enum ScopeItem {
     None, // used as a return value
 }
 
+#[derive(Clone)]
 struct Scope<'a> {
     contents: HashMap<&'a str, ScopeItem>,
     namespaces: HashMap<&'a str, Scope<'a>>,
@@ -153,6 +157,67 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                     regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
                 }
             }
+        }
+    }
+
+
+    // PROCS
+    for top_level in procs_to_process {
+        if let TopLevel::ProcDecl(idnt, args, ret_type, export, _decl, _body)
+               = top_level
+        {
+            let raw_name = raw_name(&idnt, source_name);
+            let ret_type = asttype_to_irtype(ret_type);
+
+            if matches!(scope.search(&idnt).0, ScopeItem::Proc(_, _, _)) {
+                // TODO: handle error of redeclaration
+            }
+
+            // will fork scope for local proc
+            // will allow shadowing, but `local_set` used to prevent duplicate
+            // idents within the function scope
+            // will_ not add to scope right aways, since it needs to add self first
+            let mut local_set: HashSet<String> = HashSet::new();
+            let mut proc_args: Vec<(&str, String, IRType)> = vec![];
+
+            // register proc args
+            for (typ, names) in args {
+                let typ = asttype_to_irtype(typ);
+                for name in names {
+                    let raw_arg_name = raw_arg_name(name, &raw_name);
+                    if !local_set.contains(&raw_arg_name.clone()) {
+                        proc_args.push((name, raw_arg_name.clone(), typ.clone()));
+                        local_set.insert(raw_arg_name);
+                    } else {
+                        // TODO: handle error of duplicate argument name
+                    }
+                }
+            }
+
+            // insert self to global scope and fork it as local
+            scope.insert(&idnt, ScopeItem::Proc(raw_name.clone(),
+                         proc_args.iter().map(|(_, _, typ)| typ.clone()).collect(),
+                         ret_type.clone()));
+            let mut local_scope = scope.clone();
+
+            // add args to local scope and format args for IR
+            let mut final_args: Vec<(String, IRType)> = vec![];
+            for (name, raw_arg_name, typ) in proc_args.iter() {
+                local_scope.insert(&Ident {name: name, namespace: vec![]},
+                                   ScopeItem::Var(raw_arg_name.clone(), typ.clone()));
+                final_args.push((raw_arg_name.clone(), typ.clone()));
+            }
+
+            // TODO: add locals
+            let local_vars: Vec<(String, IRType)> = vec![];
+            // TODO: add body
+            let body_ir: IRList = vec![];
+            
+            regular_ir.push(TopLevelIR::Proc(raw_name, final_args, ret_type, 
+                                             if let Some(s) = export {
+                                                 Some(s.to_string())
+                                             } else { None },
+                                             local_vars, body_ir));
         }
     }
 

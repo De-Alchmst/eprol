@@ -8,3 +8,12 @@ F64 bach := 4.2
 END
 
 VAR F32 bar := 10 END
+
+PROC foo : bar (I32 a, b, I64 c)
+EXPORT "foo"
+DO
+END
+
+PROC foo : I32
+DO
+END

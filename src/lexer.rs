@@ -93,7 +93,7 @@ pub enum Token<'a> {
     #[token("FALSE")]
     False,
 
-    #[regex(r"[iIfFuUsS](8|16|32|64)", priority=20)]
+    #[regex(r"[IFUS](8|16|32|64)", priority=20)]
     Type(&'a str),
 
     #[regex(r"[0-9]+\.[0-9]+", priority=30)]

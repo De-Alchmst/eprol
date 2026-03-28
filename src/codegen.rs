@@ -46,6 +46,20 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
                 let (typ, _) = val;
                 println!(" (global {} (mut {}) {})",
                          raw_name, typ, ir_to_str(val))
+            },
+
+            TopLevelIR::Proc(raw_name, args, ret_type, export, _locals, _body) => {
+                let export = if let Some(s) = export {
+                    format!(" (export \"{}\") ", s)
+                 } else {
+                     String::from("")
+                 };
+                 println!(" (func {}{}{} {})",
+                          raw_name, export,
+                          args.iter().map(|(name, typ)|
+                              format!("(param {} {})", name, typ))
+                              .collect::<Vec<String>>().join(" "),
+                          irtype_to_return(ret_type))
             }
         }
     }

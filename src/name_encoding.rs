@@ -8,3 +8,7 @@ pub fn raw_name<'a>(name: &Ident, source: &'a str) -> String {
     };
     format!("${}:{}{}", source, nmsp, name.name)
 }
+
+pub fn raw_arg_name<'a, 'b>(name: &'a str, proc_name: &'b String) -> String {
+    format!("${}:{}", proc_name, name)
+}

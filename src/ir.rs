@@ -43,6 +43,8 @@ pub enum IR {
 #[derive(Debug, PartialEq)]
 pub enum TopLevelIR {
     GlobalVar(String, (IRType, IR)),
+    // name, args, return, export, locals, body
+    Proc(String, Vec<(String, IRType)>, IRType, Option<String>, Vec<(String, IRType)>, IRList),
 }
 pub type ImportIR<'a> = (Vec<&'a str>, String, IRType);
 
