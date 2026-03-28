@@ -603,11 +603,11 @@ mod tests {
     #[test]
     fn proc_def() {
         assert_eq!(parse_str_top_level(
-                "PROC foo : bar (i32 a, b, f64 c): i32
+                "PROC foo : bar (I32 a, b, F64 c): I32
                 EXPORT \"exp\"
-                i32 foo
+                I32 foo
                 CONST bar = 1
-                VAR i64 baz
+                VAR I64 baz
                 DO
                     ;;
                     foo := 3;;

@@ -26,22 +26,20 @@ enum ScopeItem {
 }
 
 #[derive(Clone)]
-struct Scope<'a> {
-    contents: HashMap<&'a str, ScopeItem>,
-    namespaces: HashMap<&'a str, Scope<'a>>,
+struct Scope {
+    contents: HashMap<String, ScopeItem>,
+    namespaces: HashMap<String, Scope>,
 }
 
 // cache for already processed files imported at multiple places
 static FILE_CACHE: OnceLock<HashMap<&str, Scope>> = OnceLock::new();
-fn get_file_cache<'a>() -> &'static HashMap<&'a str, Scope<'a>> {
+fn get_file_cache<'a>() -> &'static HashMap<&'a str, Scope> {
     FILE_CACHE.get_or_init(|| HashMap::new())
 }
 
 // flag to signal whether compilation finished successfully or not
 // don't join files if errors found
 pub static mut FOUND_ERRORS: bool = false;
-
-
 pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let source = read_to_string(source_name).expect("Failed to read source file");
     let ast = parse_str_program(&source).expect("Failed to parse source file");
@@ -69,22 +67,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
-                for (name, expr) in decls {
-                    let idnt = Ident {name, namespace: nmspc.clone()};
-                    let (val, _localp) = scope.search(&idnt);
-
-                    if let ScopeItem::None = val {
-                        let expr_ir = expr2ir(&expr, &scope, IRType::Any);
-                        // if expression is literal
-                        if let Some(lit_val) = irlist_lit(&expr_ir) {
-                            scope.insert(&idnt, ScopeItem::Const(lit_val));
-                        } else {
-                            // TODO: handle error on non-literal const value
-                        }
-                    } else {
-                        // TODO: handle error of redeclaration
-                    }
-                }
+                process_const_decl(&mut scope, &nmspc, &decls);
             }
         }
     }
@@ -125,38 +108,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // VARS
     for top_level in vars_to_process {
         if let TopLevel::VarDecl(nmspc, decls) = top_level {
-            for (typ, vals) in decls {
-                let typ = asttype_to_irtype(typ);
-
-                for (name, init_expr) in vals {
-                    let idnt = Ident {name, namespace: nmspc.clone()};
-                    let raw_name = raw_name(&idnt, source_name);
-
-                    // Already in scope
-                    if !matches!(scope.search(&idnt).0, ScopeItem::None) {
-                        // TODO: handle error of redeclaration
-                        continue;
-                    }
-
-                    // Pre-compute initialization IR (immutable borrow of scope)
-                    let init_ir = match init_expr {
-                        None => default_irtype_val(&typ),
-                        Some(expr) => {
-                            let expr_ir = expr2ir(&expr, &scope, typ.clone());
-                            if let Some(_) = irlist_lit(&expr_ir) {
-                                expr_ir.last().unwrap().clone()
-                            } else {
-                                // TODO: handle non-literal var initializer
-                                continue;
-                            }
-                        }
-                    };
-
-                    scope.insert(&idnt, ScopeItem::Var(raw_name.clone(),
-                                                       typ.clone()));
-                    regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
-                }
-            }
+            process_var_decl(&mut scope, &nmspc, decls, &mut regular_ir, source_name);
         }
     }
 
@@ -232,8 +184,82 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 }
 
 
-impl<'a> Scope<'a> {
-    fn search(&self, ident: &Ident<'a>) -> (ScopeItem, bool) {
+/// Process a const declaration block
+/// Evaluates constant expressions and adds them to the scope
+fn process_const_decl<'a>(
+    scope: &mut Scope,
+    nmspc: &[&'a str],
+    decls: &ConstDeclBlock<'a>
+) {
+    // move from here
+    for (name, expr) in decls {
+        let idnt = Ident {name, namespace: nmspc.to_vec()};
+        let (val, _localp) = scope.search(&idnt);
+
+        if let ScopeItem::None = val {
+            let expr_ir = expr2ir(&expr, &scope, IRType::Any);
+            // if expression is literal
+            if let Some(lit_val) = irlist_lit(&expr_ir) {
+                scope.insert(&idnt, ScopeItem::Const(lit_val));
+            } else {
+                // TODO: handle error on non-literal const value
+            }
+        } else {
+            // TODO: handle error of redeclaration
+        }
+    }
+}
+
+
+/// Process a variable declaration block
+/// Declares variables in scope and generates global variable IR
+fn process_var_decl<'a>(
+    scope: &mut Scope,
+    nmspc: &[&'a str],
+    decls: Vec<VarDeclBlock<'a>>,
+    regular_ir: &mut TopLevelIRList,
+    source_name: &str
+) {
+    // move from here
+    for (typ, vals) in decls {
+        let typ = asttype_to_irtype(typ);
+
+        for (name, init_expr) in vals {
+            let idnt = Ident {name, namespace: nmspc.to_vec()};
+            let raw_name = raw_name(&idnt, source_name);
+
+            // Already in scope
+            if !matches!(scope.search(&idnt).0, ScopeItem::None) {
+                // TODO: handle error of redeclaration
+                continue;
+            }
+
+            // Pre-compute initialization IR (immutable borrow of scope)
+            let init_ir = match init_expr {
+                None => default_irtype_val(&typ),
+                Some(expr) => {
+                    let expr_ir = expr2ir(&expr, &scope, typ.clone());
+                    if let Some(_) = irlist_lit(&expr_ir) {
+                        expr_ir.last().unwrap().clone()
+                    } else {
+                        // TODO: handle non-literal var initializer
+                        continue;
+                    }
+                }
+            };
+
+            scope.insert(&idnt, ScopeItem::Var(raw_name.clone(),
+                                               typ.clone()));
+            regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
+        }
+    }
+}
+
+
+
+
+impl Scope {
+    fn search(&self, ident: &Ident) -> (ScopeItem, bool) {
         let mut localp = true;
         let mut current_scope = self;
 
@@ -255,24 +281,25 @@ impl<'a> Scope<'a> {
     }
 
 
-    fn insert(&mut self, ident: &Ident<'a>, item: ScopeItem) -> bool {
+    fn insert(&mut self, ident: &Ident, item: ScopeItem) -> bool {
         let mut current_scope = self;
 
         // step through namespaces to find required scope, create if not found
         for i in 0..ident.namespace.len() {
             if !current_scope.namespaces.contains_key(ident.namespace[i]) {
-                current_scope.namespaces.insert(ident.namespace[i], Scope {
+                current_scope.namespaces.insert(ident.namespace[i].to_string(), Scope {
                     contents: HashMap::new(),
                     namespaces: HashMap::new(),
                 });
             }
-            current_scope = current_scope.namespaces.get_mut(ident.namespace[i]).unwrap();
+            current_scope = current_scope.namespaces.get_mut(ident.namespace[i])
+                                                    .unwrap();
         }
 
         if current_scope.contents.contains_key(ident.name) {
             return false;
         } else {
-            current_scope.contents.insert(ident.name, item);
+            current_scope.contents.insert(ident.name.to_string(), item);
             true
         }
     }
@@ -290,7 +317,7 @@ fn irlist_lit(ir: &IRList) -> Option<LitVal> {
 
 
 // TODO: handle errors somehow
-fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList {
+fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
     match expr {
         // LITERALS
         Expr::Lit(lit) => match lit {
@@ -332,8 +359,10 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope<'a>, expects: IRType) -> IRList {
             match &val {
                 // constants -> place as literals
                 ScopeItem::Const(lit_val) => match lit_val {
-                    LitVal::Int(x) => expr2ir(&Expr::Lit(Literal::Int(*x)), scope, expects),
-                    LitVal::Float(x) => expr2ir(&Expr::Lit(Literal::Float(*x)), scope, expects),
+                    LitVal::Int(x)
+                        => expr2ir(&Expr::Lit(Literal::Int(*x)), scope, expects),
+                    LitVal::Float(x)
+                        => expr2ir(&Expr::Lit(Literal::Float(*x)), scope, expects),
                     // String constants not supported yet - would need owned strings in IR
                     LitVal::Str(_) => vec![(IRType::Error, IR::Error)],
                 },
@@ -424,23 +453,29 @@ mod tests {
     use super::*;
 
     static TEST_SCOPE: OnceLock<Scope> = OnceLock::new();
-    fn get_test_scope<'a>() -> &'static Scope<'a> {
+    fn get_test_scope<'a>() -> &'static Scope {
         TEST_SCOPE.get_or_init(|| {
             let mut scope = Scope {
                 contents: HashMap::new(),
                 namespaces: HashMap::new(),
             };
-            scope.contents.insert("x", ScopeItem::Var("raw_x".to_string(), IRType::I32));
-            scope.contents.insert("y", ScopeItem::Const(LitVal::Int(42)));
-            scope.contents.insert("f", ScopeItem::Proc("raw_f".to_string(), vec![IRType::I32, IRType::F64], IRType::F64));
+            scope.contents.insert(String::from("x"),
+                ScopeItem::Var("raw_x".to_string(), IRType::I32));
+            scope.contents.insert(String::from("y"),
+                ScopeItem::Const(LitVal::Int(42)));
+            scope.contents.insert(String::from("f"),
+                ScopeItem::Proc("raw_f".to_string(),
+                                vec![IRType::I32, IRType::F64], IRType::F64));
 
             let mut nmspc_scope = Scope {
                 contents: HashMap::new(),
                 namespaces: HashMap::new(),
             };
-            nmspc_scope.contents.insert("z", ScopeItem::Var("raw_z".to_string(), IRType::F64));
-            nmspc_scope.contents.insert("w", ScopeItem::Const(LitVal::Float(3.7)));
-            scope.namespaces.insert("n", nmspc_scope);
+            nmspc_scope.contents.insert(String::from("z"),
+                ScopeItem::Var("raw_z".to_string(), IRType::F64));
+            nmspc_scope.contents.insert(String::from("w"),
+                ScopeItem::Const(LitVal::Float(3.7)));
+            scope.namespaces.insert(String::from("n"), nmspc_scope);
 
             scope
         })
