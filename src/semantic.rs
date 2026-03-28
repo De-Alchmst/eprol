@@ -118,29 +118,53 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
 
-    // VARS
+    // VARS - Two-pass approach to avoid borrow conflicts
+    for top_level in &vars_to_process {
+        if let TopLevel::VarDecl(nmspc, decls) = top_level {
+            for (typ, vals) in decls {
+                let typ = asttype_to_irtype(typ.clone());
+
+                // PASS 1: Insert all variables into scope (mutable borrows only)
+                for (name, _) in vals {
+                    let idnt = Ident {name: *name, namespace: nmspc.clone()};
+                    
+                    if !matches!(scope.search(&idnt).0, ScopeItem::None) {
+                        // TODO: handle error of redeclaration
+                        continue;
+                    }
+                    
+                    let raw_name = raw_name(&idnt, source_name);
+                    scope.insert(&idnt, ScopeItem::Var(raw_name, typ.clone()));
+                }
+            }
+        }
+    }
+
+    // PASS 2: Generate IR (immutable borrows only)
     for top_level in vars_to_process {
         if let TopLevel::VarDecl(nmspc, decls) = top_level {
             for (typ, vals) in decls {
                 let typ = asttype_to_irtype(typ);
+
                 for (name, init_expr) in vals {
                     let idnt = Ident {name, namespace: nmspc.clone()};
-                    let raw_name = raw_name(&idnt, source_name);
-                    if let (ScopeItem::None, _) = scope.search(&idnt) {
-                        scope.insert(&idnt, ScopeItem::Var(raw_name.clone(), typ.clone()));
-
-                        match init_expr {
-                            None => {
-                                regular_ir.push(TopLevelIR::GlobalVar(raw_name,
-                                                      default_irtype_val(&typ)));
-                            },
-
+                    
+                    // Look up the variable we inserted in pass 1
+                    if let (ScopeItem::Var(raw_name, var_type), _) = scope.search(&idnt) {
+                        let init_ir = match init_expr {
+                            None => default_irtype_val(&var_type),
                             Some(expr) => {
-
+                                let expr_ir = expr2ir(&expr, &scope, typ.clone());
+                                if let Some(_) = irlist_lit(&expr_ir) {
+                                    expr_ir.last().unwrap().clone()
+                                } else {
+                                    // TODO: handle non-literal var initializer
+                                    continue;
+                                }
                             }
-                        }
-                    } else {
-                        // TODO: handle error of redeclaration
+                        };
+
+                        regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
                     }
                 }
             }
