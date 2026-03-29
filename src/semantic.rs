@@ -10,7 +10,7 @@ use crate::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
     fs::read_to_string
 };
 
@@ -32,9 +32,16 @@ struct Scope {
 }
 
 // cache for already processed files imported at multiple places
-static FILE_CACHE: OnceLock<HashMap<&str, Scope>> = OnceLock::new();
-fn get_file_cache<'a>() -> &'static HashMap<&'a str, Scope> {
-    FILE_CACHE.get_or_init(|| HashMap::new())
+static FILE_CACHE: OnceLock<Mutex<HashMap<&str, Scope>>> = OnceLock::new();
+fn get_file_cache<'a>() -> &'static Mutex<HashMap<&'a str, Scope>> {
+    FILE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// used to store data for the wasm data section
+// currently only strings
+static DATA_SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+fn get_data_set<'a>() -> &'static Mutex<HashSet<String>> {
+    DATA_SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
 
 // flag to signal whether compilation finished successfully or not
@@ -245,6 +252,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
     print_wat_header();
     print_import_ir(&import_ir);
+    print_memory(1, vec!["env", "memory"]);
+    print_data(get_data_set().lock().unwrap().iter().cloned().collect(), 0);
     print_top_level_ir(&regular_ir);
     print_wat_footer();
 
@@ -415,10 +424,14 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                 _ => vec![(IRType::Error, IR::Error)]
             },
             // TODO: handle strings like a normal person
-            Literal::Str(s) => match expects {
-                IRType::Int | IRType::I32 | IRType::Any => vec![(IRType::I32, IR::LitStr(s.to_string()))],
-                IRType::I64 => vec![(IRType::I64, IR::LitStr(s.to_string()))],
-                _ => vec![(IRType::Error, IR::Error)]
+            Literal::Str(s) => {
+                let s = s.to_string();
+                get_data_set().lock().unwrap().insert(s.clone());
+                match expects {
+                    IRType::Int | IRType::I32 | IRType::Any => vec![(IRType::I32, IR::LitStr(s.to_string()))],
+                    IRType::I64 => vec![(IRType::I64, IR::LitStr(s))],
+                    _ => vec![(IRType::Error, IR::Error)]
+                }
             },
         },
 
@@ -445,7 +458,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                     LitVal::Float(x)
                         => expr2ir(&Expr::Lit(Literal::Float(*x)), scope, expects),
                     // String constants not supported yet - would need owned strings in IR
-                    LitVal::Str(_) => vec![(IRType::Error, IR::Error)],
+                    LitVal::Str(s)
+                        => expr2ir(&Expr::Lit(Literal::Str(s)), scope, expects),
                 },
 
                 // variables -> place and cast if needed
@@ -502,11 +516,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         // PROC CALLS
         Expr::ProcCall(idnt, args) => {
             let (val, _localp) = scope.search(idnt);
-            println!("proc call search: {:#?}", val);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
-                    println!("args: {:#?}, {:#?}", arg_types, args);
-                    println!("{}|{}", arg_types.len(), args.len());
                     // check args length
                     if arg_types.len() != args.len() {
                         return vec![(IRType::Error, IR::Error)];
@@ -516,7 +527,6 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                     let mut ir = vec![];
                     for i in 0..args.len() {
                         let arg_ir = expr2ir(&args[i], scope, arg_types[i].clone());
-                        println!("arg_ir: {:#?}", arg_ir);
                         ir.extend(arg_ir);
                     }
                     ir.extend(ir_resolve_types((ret_type.clone(),

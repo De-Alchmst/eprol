@@ -1,6 +1,10 @@
 use crate::{
     ir::*,
 };
+use std::{
+    collections::{HashMap},
+    sync::{Mutex, OnceLock},
+};
 
 pub fn print_wat_header() {
     println!("(module")
@@ -9,7 +13,6 @@ pub fn print_wat_header() {
 pub fn print_wat_footer() {
     println!(")")
 }
-
 
 pub fn print_import_ir(lst: &ImportIRList) {
     for ir in lst {
@@ -35,6 +38,42 @@ pub fn print_import_ir(lst: &ImportIRList) {
                 }
             }
         }
+    }
+}
+
+
+pub fn print_memory(pages: i32, import: Vec<&str>) {
+    let import_str = if import.len() > 0 {
+        format!(" (import {})",
+                import.iter().map(|s| format!("\"{}\"", s))
+                      .collect::<Vec<String>>().join(" "))
+    } else {
+        String::from("")
+    };
+    println!(" (memory {} {})", import_str, pages);
+}
+
+
+static DATA_INFO: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+fn get_data_info<'a>() -> &'static Mutex<HashMap<String, u32>> {
+    DATA_INFO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn u32_to_hex_escapes(value: u32) -> String {
+    value.to_le_bytes().iter().map(|b| format!("\\{:02x}", b)).collect()
+}
+
+// TODO: escape strings
+pub fn print_data(lst: Vec<String>, mut data_top: u32) {
+    let mut data_info = get_data_info().lock().unwrap();
+
+    for s in lst {
+        let length = s.len() as u32;
+        println!(" (data (i32.const {}) \"{}{}\")",
+                 data_top, u32_to_hex_escapes(length), s);
+        // + 4 for length data
+        data_info.insert(s, data_top + 4);
+        data_top += length + 4;
     }
 }
 
@@ -92,6 +131,10 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
         IR::LocalGet(raw_name) => format!("local.get {raw_name}"),
         IR::LocalSet(raw_name) => format!("local.set {raw_name}"),
         IR::Add => format!("{typ}.add"),
+
+        IR::LitStr(s) =>
+            format!("i32.const {}",
+                    get_data_info().lock().unwrap().get(s).unwrap_or(&0)),
 
         _ => format!("[[[{}, {:#?}]]]", typ, val)
     }

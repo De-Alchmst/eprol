@@ -9,6 +9,11 @@ END
 
 VAR F32 bar := 10 END
 
+VAR : greet
+I32  h := "Hello,",
+     w := "world!"
+END
+
 PROC foo : bar (I32 a, b, I64 c)
 EXPORT "foo"
 I32 x := 20, y := x
