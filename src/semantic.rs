@@ -19,7 +19,7 @@ use std::{
 enum LitVal { Int(i64), Float(f64), Str(String) }
 #[derive(Clone, Debug)]
 enum ScopeItem {
-    Var(String, IRType), // raw_name, type
+    Var(String, IRType, bool), // raw_name, type, local
     Const(LitVal), // value
     Proc(String, Vec<IRType>, IRType), // raw_name, arg types, return type
     None, // used as a return value
@@ -32,9 +32,9 @@ struct Scope {
 }
 
 // cache for already processed files imported at multiple places
-static FILE_CACHE: OnceLock<Mutex<HashMap<&str, Scope>>> = OnceLock::new();
-fn get_file_cache<'a>() -> &'static Mutex<HashMap<&'a str, Scope>> {
-    FILE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+static _FILE_CACHE: OnceLock<Mutex<HashMap<&str, Scope>>> = OnceLock::new();
+fn _get_file_cache<'a>() -> &'static Mutex<HashMap<&'a str, Scope>> {
+    _FILE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 // used to store data for the wasm data section
@@ -85,7 +85,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // IMPORTS
     for top_level in imports_to_process {
         if let TopLevel::Import(outer, inner, typ) = top_level {
-            let (val, _localp) = scope.search(&inner);
+            let val = scope.search(&inner);
 
             if let ScopeItem::None = val {
                 let typ = asttype_to_irtype(typ);
@@ -99,7 +99,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
                     IRType::I32 | IRType::I64 | IRType::F32 | IRType::F64 => {
                         scope.insert(&inner, ScopeItem::Var(raw_name.clone(),
-                                     typ.clone()));
+                                     typ.clone(), false));
                     },
                     
                     // void
@@ -133,7 +133,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             let raw_name = raw_name(&idnt, source_name);
             let ret_type = asttype_to_irtype(ret_type.clone());
 
-            if matches!(scope.search(&idnt).0, ScopeItem::Proc(_, _, _)) {
+            if matches!(scope.search(&idnt), ScopeItem::Proc(_, _, _)) {
                 // TODO: handle error of redeclaration
             }
 
@@ -174,7 +174,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                         proc_args.push((raw_arg_name.clone(), typ.clone()));
                         local_scope.insert(&Ident {name: name, namespace: vec![]},
                                            ScopeItem::Var(raw_arg_name,
-                                                          typ.clone()));
+                                                          typ.clone(), true));
                     } else {
                         // TODO: handle error of duplicate argument name
                     }
@@ -222,7 +222,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
                                 local_scope.insert(&idnt,
                                                    ScopeItem::Var(raw_name.clone(),
-                                                                  typ.clone()));
+                                                                  typ.clone(),
+                                                                  true));
                                 // add local declaration
                                 local_vars.push((raw_name.clone(), typ.clone()));
 
@@ -272,7 +273,7 @@ fn process_const_decl<'a>(
     expr: Expr<'a>
 ) {
     let idnt = Ident {name, namespace: nmspc.to_vec()};
-    let (val, _localp) = scope.search(&idnt);
+    let val = scope.search(&idnt);
 
     if let ScopeItem::None = val {
         let expr_ir = expr2ir(&expr, &scope, IRType::Any);
@@ -306,7 +307,7 @@ fn process_var_decls<'a>(
             let raw_name = raw_name(&idnt, source_name);
 
             // Already in scope
-            if !matches!(scope.search(&idnt).0, ScopeItem::None) {
+            if !matches!(scope.search(&idnt), ScopeItem::None) {
                 // TODO: handle error of redeclaration
                 continue;
             }
@@ -326,7 +327,7 @@ fn process_var_decls<'a>(
             };
 
             scope.insert(&idnt, ScopeItem::Var(raw_name.clone(),
-                                               typ.clone()));
+                                               typ.clone(), false));
             regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
         }
     }
@@ -335,8 +336,7 @@ fn process_var_decls<'a>(
 
 
 impl Scope {
-    fn search(&self, ident: &Ident) -> (ScopeItem, bool) {
-        let mut localp = true;
+    fn search(&self, ident: &Ident) -> ScopeItem {
         let mut current_scope = self;
 
         // step through namespaces to find required scope, return Error if not found
@@ -344,15 +344,14 @@ impl Scope {
             match current_scope.namespaces.get(ident.namespace[i]) {
                 Some(ns) => {
                     current_scope = &ns;
-                    localp = false;
                 },
-                None => return (ScopeItem::None, false)
+                None => return ScopeItem::None
             }
         }
         if let Some(var) = current_scope.contents.get(ident.name) {
-            (var.clone(), localp)
+            var.clone()
         } else {
-            (ScopeItem::None, false)
+            ScopeItem::None
         }
     }
 
@@ -449,7 +448,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
 
         // IDENTS
         Expr::Ident(idnt) => {
-            let (val, localp) = scope.search(idnt);
+            let val = scope.search(idnt);
             match &val {
                 // constants -> place as literals
                 ScopeItem::Const(lit_val) => match lit_val {
@@ -463,8 +462,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                 },
 
                 // variables -> place and cast if needed
-                ScopeItem::Var(raw_name, var_type) => {
-                    let expr = if localp {
+                ScopeItem::Var(raw_name, var_type, localp) => {
+                    let expr = if *localp {
                         (var_type.clone(), IR::LocalGet(raw_name.clone()))
                     } else {
                         (var_type.clone(), IR::GlobalGet(raw_name.clone()))
@@ -515,7 +514,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
 
         // PROC CALLS
         Expr::ProcCall(idnt, args) => {
-            let (val, _localp) = scope.search(idnt);
+            let val = scope.search(idnt);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
                     // check args length
