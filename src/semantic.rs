@@ -15,7 +15,7 @@ use std::{
 };
 
 // types used for Scope representation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum LitVal { Int(i64), Float(f64), Str(String) }
 #[derive(Clone)]
 enum ScopeItem {
@@ -67,7 +67,9 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
-                process_const_decl(&mut scope, &nmspc, &decls);
+                for (name, expr) in decls {
+                    process_const_decl(&mut scope, &nmspc, name, expr);
+                }
             }
         }
     }
@@ -108,14 +110,14 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // VARS
     for top_level in vars_to_process {
         if let TopLevel::VarDecl(nmspc, decls) = top_level {
-            process_var_decl(&mut scope, &nmspc, decls, &mut regular_ir, source_name);
+            process_var_decls(&mut scope, &nmspc, decls, &mut regular_ir, source_name);
         }
     }
 
 
     // PROCS
     for top_level in procs_to_process {
-        if let TopLevel::ProcDecl(idnt, args, ret_type, export, _decl, _body)
+        if let TopLevel::ProcDecl(idnt, args, ret_type, export, decls, _body)
                = top_level
         {
             let raw_name = raw_name(&idnt, source_name);
@@ -128,7 +130,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             // will fork scope for local proc
             // will allow shadowing, but `local_set` used to prevent duplicate
             // idents within the function scope
-            // will_ not add to scope right aways, since it needs to add self first
+            // will not add to scope right aways, since it needs to add self first
             let mut local_set: HashSet<String> = HashSet::new();
             let mut proc_args: Vec<(&str, String, IRType)> = vec![];
 
@@ -160,10 +162,62 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                 final_args.push((raw_arg_name.clone(), typ.clone()));
             }
 
-            // TODO: add locals
-            let local_vars: Vec<(String, IRType)> = vec![];
+            // locals
+            // adds variable initialisations to `body_ir`
+            let mut local_vars: Vec<(String, IRType)> = vec![];
+            let mut body_ir: IRList = vec![];
+
+            for decl in decls {
+                match decl {
+                    ProcDeclBlock::Const(cdecls) => {
+                        for (name, expr) in cdecls {
+                            local_set.insert(raw_arg_name(name, &raw_name));
+                            process_const_decl(&mut local_scope, &[], name, expr);
+                        }
+                    },
+
+                    // cannot use `process_var_decls`, since it does not allow
+                    // shadowing and does not add anything to `local_vars`
+                    // and few other things...
+                    ProcDeclBlock::Var(vdecls) => {
+                        for (typ, vals) in vdecls {
+                            let typ = asttype_to_irtype(typ);
+
+                            for (name, init_expr) in vals {
+                                let idnt = Ident {name, namespace: vec![]};
+                                let raw_name = raw_arg_name(name, &raw_name);
+
+                                // already in local scope
+                                if local_set.contains(&raw_name.clone()) {
+                                    // TODO: handle error of redeclaration
+                                    continue;
+                                }
+
+
+                                // Pre-compute initialization IR
+                                let init_ir = match init_expr {
+                                    None => vec![default_irtype_val(&typ)],
+                                    Some(expr)
+                                        => expr2ir(&expr, &local_scope, typ.clone())
+                                };
+
+                                local_scope.insert(&idnt,
+                                                   ScopeItem::Var(raw_name.clone(),
+                                                                  typ.clone()));
+                                // add local declaration
+                                local_vars.push((raw_name.clone(), typ.clone()));
+
+                                // init local variable
+                                body_ir.extend(init_ir);
+                                body_ir.push((IRType::Void,
+                                              IR::LocalSet(raw_name.clone())));
+                            }
+                        }
+                    }
+                }
+            }
+            
             // TODO: add body
-            let body_ir: IRList = vec![];
             
             regular_ir.push(TopLevelIR::Proc(raw_name, final_args, ret_type, 
                                              if let Some(s) = export {
@@ -189,31 +243,29 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 fn process_const_decl<'a>(
     scope: &mut Scope,
     nmspc: &[&'a str],
-    decls: &ConstDeclBlock<'a>
+    name: &'a str,
+    expr: Expr<'a>
 ) {
-    // move from here
-    for (name, expr) in decls {
-        let idnt = Ident {name, namespace: nmspc.to_vec()};
-        let (val, _localp) = scope.search(&idnt);
+    let idnt = Ident {name, namespace: nmspc.to_vec()};
+    let (val, _localp) = scope.search(&idnt);
 
-        if let ScopeItem::None = val {
-            let expr_ir = expr2ir(&expr, &scope, IRType::Any);
-            // if expression is literal
-            if let Some(lit_val) = irlist_lit(&expr_ir) {
-                scope.insert(&idnt, ScopeItem::Const(lit_val));
-            } else {
-                // TODO: handle error on non-literal const value
-            }
+    if let ScopeItem::None = val {
+        let expr_ir = expr2ir(&expr, &scope, IRType::Any);
+        // if expression is literal
+        if let Some(lit_val) = irlist_lit(&expr_ir) {
+            scope.insert(&idnt, ScopeItem::Const(lit_val));
         } else {
-            // TODO: handle error of redeclaration
+            // TODO: handle error on non-literal const value
         }
+    } else {
+        // TODO: handle error of redeclaration
     }
 }
 
 
 /// Process a variable declaration block
 /// Declares variables in scope and generates global variable IR
-fn process_var_decl<'a>(
+fn process_var_decls<'a>(
     scope: &mut Scope,
     nmspc: &[&'a str],
     decls: Vec<VarDeclBlock<'a>>,
@@ -254,7 +306,6 @@ fn process_var_decl<'a>(
         }
     }
 }
-
 
 
 
@@ -322,20 +373,20 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         // LITERALS
         Expr::Lit(lit) => match lit {
             Literal::Int(x) => match expects {
-                IRType::Int | IRType::I64 => vec![(IRType::I64, IR::LitInt(*x))],
+                IRType::Int | IRType::I64 | IRType::Any => vec![(IRType::I64, IR::LitInt(*x))],
                 IRType::I32 => vec![(IRType::I32, IR::LitInt(*x))],
                 IRType::Float | IRType::F64 => vec![(IRType::F64, IR::LitFloat(*x as f64))],
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x as f64))],
                 _ => vec![(IRType::Error, IR::Error)]
             },
             Literal::Float(x) => match expects {
-                IRType::Float | IRType::F64 => vec![(IRType::F64, IR::LitFloat(*x))],
+                IRType::Float | IRType::F64 | IRType::Any => vec![(IRType::F64, IR::LitFloat(*x))],
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x))],
                 _ => vec![(IRType::Error, IR::Error)]
             },
             // TODO: handle strings like a normal person
             Literal::Str(s) => match expects {
-                IRType::Int | IRType::I32 => vec![(IRType::I32, IR::LitStr(s.to_string()))],
+                IRType::Int | IRType::I32 | IRType::Any => vec![(IRType::I32, IR::LitStr(s.to_string()))],
                 IRType::I64 => vec![(IRType::I64, IR::LitStr(s.to_string()))],
                 _ => vec![(IRType::Error, IR::Error)]
             },

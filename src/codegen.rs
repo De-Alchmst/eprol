@@ -48,32 +48,27 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
                          raw_name, typ, ir_to_str(val))
             },
 
-            TopLevelIR::Proc(raw_name, args, ret_type, export, _locals, _body) => {
+            TopLevelIR::Proc(raw_name, args, ret_type, export, locals, body) => {
                 let export = if let Some(s) = export {
-                    format!(" (export \"{}\") ", s)
+                    format!(" (export \"{}\")", s)
                  } else {
                      String::from("")
                  };
-                 println!(" (func {}{}{} {})",
+                 println!("\n (func {}{} {} {}\n   {}\n   {})",
                           raw_name, export,
                           args.iter().map(|(name, typ)|
                               format!("(param {} {})", name, typ))
                               .collect::<Vec<String>>().join(" "),
-                          irtype_to_return(ret_type))
+                          irtype_to_return(ret_type),
+                          locals.iter()
+                                .map(|(name, typ)| format!("(local {name} {typ})"))
+                                .collect::<Vec<String>>().join("\n   "),
+                          body.iter().map(|ir| ir_to_str(ir))
+                              .collect::<Vec<String>>().join("\n   "))
             }
         }
     }
 }
-
-
-pub fn print_wat_ir(lst: &IRList) {
-    for (_typ, ir) in lst {
-        match ir {
-            _ => {}
-        }
-    }
-}
-
 
 fn irtype_to_return(typ: &IRType) -> String {
     match typ {
@@ -85,10 +80,15 @@ fn irtype_to_return(typ: &IRType) -> String {
 fn ir_to_str(ir: &(IRType, IR)) -> String {
     let (typ, val) = ir;
     match val {
-        IR::LitInt(i) => format!("{}.const {}", typ, i),
-        IR::LitFloat(f) => format!("{}.const {}", typ, f),
         IR::Drop => format!("drop"),
-        IR::Call(raw_name) => format!("call {}", raw_name),
-        _ => unimplemented!()
+        IR::LitInt(i) => format!("{typ}.const {i}"),
+        IR::LitFloat(f) => format!("{typ}.const {f}"),
+        IR::Call(raw_name) => format!("call {raw_name}"),
+        IR::GlobalGet(raw_name) => format!("global.get {raw_name}"),
+        IR::GlobalSet(raw_name) => format!("global.set {raw_name}"),
+        IR::LocalGet(raw_name) => format!("local.get {raw_name}"),
+        IR::LocalSet(raw_name) => format!("local.set {raw_name}"),
+
+        _ => format!("[[[{}, {:#?}]]]", typ, val)
     }
 }
