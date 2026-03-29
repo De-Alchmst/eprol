@@ -17,7 +17,7 @@ use std::{
 // types used for Scope representation
 #[derive(Clone, Debug)]
 enum LitVal { Int(i64), Float(f64), Str(String) }
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ScopeItem {
     Var(String, IRType), // raw_name, type
     Const(LitVal), // value
@@ -116,23 +116,46 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
 
     // PROCS
-    for top_level in procs_to_process {
-        if let TopLevel::ProcDecl(idnt, args, ret_type, export, decls, _body)
+    // procs need to be split into two passes
+    // first puts proc into scope and second builds the IR
+    // this is to allow for recursive and mutually recursive procs
+    for top_level in &procs_to_process {
+        if let TopLevel::ProcDecl(idnt, args, ret_type, _export, _decls, _body)
                = top_level
         {
             let raw_name = raw_name(&idnt, source_name);
-            let ret_type = asttype_to_irtype(ret_type);
+            let ret_type = asttype_to_irtype(ret_type.clone());
 
             if matches!(scope.search(&idnt).0, ScopeItem::Proc(_, _, _)) {
                 // TODO: handle error of redeclaration
             }
 
+            let mut proc_args: Vec<IRType> = vec![];
+            for (typ, names) in args {
+                for _ in names {
+                    proc_args.push(asttype_to_irtype(typ.clone()));
+                }
+            }
+
+            scope.insert(&idnt, ScopeItem::Proc(raw_name.clone(),
+                         proc_args, ret_type.clone()));
+        }
+    }
+    
+    for top_level in procs_to_process {
+        if let TopLevel::ProcDecl(idnt, args, ret_type, export, decls, body)
+               = top_level
+        {
+            let raw_name = raw_name(&idnt, source_name);
+            let ret_type = asttype_to_irtype(ret_type);
+
             // will fork scope for local proc
             // will allow shadowing, but `local_set` used to prevent duplicate
             // idents within the function scope
             // will not add to scope right aways, since it needs to add self first
+            let mut local_scope = scope.clone();
             let mut local_set: HashSet<String> = HashSet::new();
-            let mut proc_args: Vec<(&str, String, IRType)> = vec![];
+            let mut proc_args: Vec<(String, IRType)> = vec![];
 
             // register proc args
             for (typ, names) in args {
@@ -140,26 +163,15 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                 for name in names {
                     let raw_arg_name = raw_arg_name(name, &raw_name);
                     if !local_set.contains(&raw_arg_name.clone()) {
-                        proc_args.push((name, raw_arg_name.clone(), typ.clone()));
-                        local_set.insert(raw_arg_name);
+                        local_set.insert(raw_arg_name.clone());
+                        proc_args.push((raw_arg_name.clone(), typ.clone()));
+                        local_scope.insert(&Ident {name: name, namespace: vec![]},
+                                           ScopeItem::Var(raw_arg_name,
+                                                          typ.clone()));
                     } else {
                         // TODO: handle error of duplicate argument name
                     }
                 }
-            }
-
-            // insert self to global scope and fork it as local
-            scope.insert(&idnt, ScopeItem::Proc(raw_name.clone(),
-                         proc_args.iter().map(|(_, _, typ)| typ.clone()).collect(),
-                         ret_type.clone()));
-            let mut local_scope = scope.clone();
-
-            // add args to local scope and format args for IR
-            let mut final_args: Vec<(String, IRType)> = vec![];
-            for (name, raw_arg_name, typ) in proc_args.iter() {
-                local_scope.insert(&Ident {name: name, namespace: vec![]},
-                                   ScopeItem::Var(raw_arg_name.clone(), typ.clone()));
-                final_args.push((raw_arg_name.clone(), typ.clone()));
             }
 
             // locals
@@ -217,9 +229,13 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                 }
             }
             
-            // TODO: add body
+            // body
+            // TODO: handle return somehow
+            for stmt in body {
+                body_ir.extend(stmt2ir(&stmt, &local_scope));
+            }
             
-            regular_ir.push(TopLevelIR::Proc(raw_name, final_args, ret_type, 
+            regular_ir.push(TopLevelIR::Proc(raw_name, proc_args, ret_type, 
                                              if let Some(s) = export {
                                                  Some(s.to_string())
                                              } else { None },
@@ -367,7 +383,21 @@ fn irlist_lit(ir: &IRList) -> Option<LitVal> {
 }
 
 
-// TODO: handle errors somehow
+fn stmt2ir<'a>(stmt: &Stmt<'a>, scope: &Scope) -> IRList {
+    match stmt {
+        Stmt::Expr(expr) => {
+            let mut ir = expr2ir(expr, scope, IRType::Any);
+            if !ir.last().is_some_and(|(t, _)| matches!(t, IRType::Void)) {
+                ir.push((IRType::Void, IR::Drop));
+            };
+            ir
+        },
+
+        _ => vec![(IRType::Void, IR::Error)] // TODO: handle other statements
+    }
+}
+
+
 fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
     match expr {
         // LITERALS
@@ -472,8 +502,11 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         // PROC CALLS
         Expr::ProcCall(idnt, args) => {
             let (val, _localp) = scope.search(idnt);
+            println!("proc call search: {:#?}", val);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
+                    println!("args: {:#?}, {:#?}", arg_types, args);
+                    println!("{}|{}", arg_types.len(), args.len());
                     // check args length
                     if arg_types.len() != args.len() {
                         return vec![(IRType::Error, IR::Error)];
@@ -483,6 +516,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                     let mut ir = vec![];
                     for i in 0..args.len() {
                         let arg_ir = expr2ir(&args[i], scope, arg_types[i].clone());
+                        println!("arg_ir: {:#?}", arg_ir);
                         ir.extend(arg_ir);
                     }
                     ir.extend(ir_resolve_types((ret_type.clone(),

@@ -137,6 +137,13 @@ pub fn ir_resolve_types(got: (IRType, IR), expected: IRType) -> IRList {
             _ => vec![(IRType::Error, IR::Error)]
         },
 
+        IRType::Void => match current {
+            IRType::Void | IRType::Any => vec![got],
+            _ => vec![(IRType::Error, IR::Error)]
+        },
+
+        IRType::Any => vec![got],
+
         _ => vec![(IRType::Error, IR::Error)]
     }
 }

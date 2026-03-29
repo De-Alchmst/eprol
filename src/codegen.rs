@@ -51,20 +51,23 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
             TopLevelIR::Proc(raw_name, args, ret_type, export, locals, body) => {
                 let export = if let Some(s) = export {
                     format!(" (export \"{}\")", s)
-                 } else {
-                     String::from("")
-                 };
-                 println!("\n (func {}{} {} {}\n   {}\n   {})",
-                          raw_name, export,
-                          args.iter().map(|(name, typ)|
-                              format!("(param {} {})", name, typ))
-                              .collect::<Vec<String>>().join(" "),
-                          irtype_to_return(ret_type),
-                          locals.iter()
-                                .map(|(name, typ)| format!("(local {name} {typ})"))
-                                .collect::<Vec<String>>().join("\n   "),
-                          body.iter().map(|ir| ir_to_str(ir))
-                              .collect::<Vec<String>>().join("\n   "))
+                } else {
+                    String::from("")
+                };
+                println!("\n (func {}{} {} {}\n   {}",
+                         raw_name, export,
+                         args.iter().map(|(name, typ)|
+                             format!("(param {} {})", name, typ))
+                             .collect::<Vec<String>>().join(" "),
+                         irtype_to_return(ret_type),
+                         locals.iter()
+                               .map(|(name, typ)| format!("(local {name} {typ})"))
+                               .collect::<Vec<String>>().join("\n   "));
+
+                for ir in body {
+                    println!("   {}", ir_to_str(ir))
+                }
+                println!(" )")
             }
         }
     }
@@ -88,6 +91,7 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
         IR::GlobalSet(raw_name) => format!("global.set {raw_name}"),
         IR::LocalGet(raw_name) => format!("local.get {raw_name}"),
         IR::LocalSet(raw_name) => format!("local.set {raw_name}"),
+        IR::Add => format!("{typ}.add"),
 
         _ => format!("[[[{}, {:#?}]]]", typ, val)
     }
