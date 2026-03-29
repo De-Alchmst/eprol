@@ -1,5 +1,4 @@
 IMPORT "console" "log" AS log : console (I32 sre, len)
-IMPORT "js" "var1" AS var1 I32
 IMPORT "env" "textUtf8" AS textUtf8 (I32 ptr, len, x, y)
 
 VAR
