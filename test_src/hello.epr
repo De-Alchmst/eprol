@@ -1,31 +1,23 @@
 IMPORT "console" "log" AS log : console (I32 sre, len)
 IMPORT "js" "var1" AS var1 I32
+IMPORT "env" "textUtf8" AS textUtf8 (I32 ptr, len, x, y)
 
-VAR : foo
-I32 bar, baz,
-    bax := 42
-F64 bach := 4.2
+VAR
+I32 hello := "Hello,",
+    world := "world!",
+    helloLen := 6,
+    worldLen := 6,
 END
 
-VAR F32 bar := 10 END
+PROC start
+EXPORT "start"
+DO END
 
-VAR : greet
-I32  h := "Hello,",
-     w := "world!"
-END
-
-PROC foo : bar (I32 a, b, I64 c)
-EXPORT "foo"
-I32 x := 20, y := x
-CONST z = 30
-VAR I64 w := z
+PROC update
+EXPORT "update"
+I32 hx := 10, hy := 10,
+    wx := 20, wy := 40,
 DO
-  foo((a+b), x);
-  0
-END
-
-
-PROC foo(I32 a, b) : I32
-DO
-  a
+  textUtf8(hello, 6, hx, hy);
+  textUtf8(world, 6, wx, wy)
 END

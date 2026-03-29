@@ -253,7 +253,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     print_wat_header();
     print_import_ir(&import_ir);
     print_memory(1, vec!["env", "memory"]);
-    print_data(get_data_set().lock().unwrap().iter().cloned().collect(), 0);
+    print_data(0x19a0, get_data_set().lock().unwrap().iter().cloned().collect());
     print_top_level_ir(&regular_ir);
     print_wat_footer();
 

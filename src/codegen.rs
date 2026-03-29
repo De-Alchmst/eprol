@@ -64,7 +64,7 @@ fn u32_to_hex_escapes(value: u32) -> String {
 }
 
 // TODO: escape strings
-pub fn print_data(lst: Vec<String>, mut data_top: u32) {
+pub fn print_data(mut data_top: u32, lst: Vec<String>) {
     let mut data_info = get_data_info().lock().unwrap();
 
     for s in lst {
