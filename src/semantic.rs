@@ -554,7 +554,7 @@ mod tests {
                 namespaces: HashMap::new(),
             };
             scope.contents.insert(String::from("x"),
-                ScopeItem::Var("raw_x".to_string(), IRType::I32));
+                ScopeItem::Var("raw_x".to_string(), IRType::I32, false));
             scope.contents.insert(String::from("y"),
                 ScopeItem::Const(LitVal::Int(42)));
             scope.contents.insert(String::from("f"),
@@ -566,7 +566,7 @@ mod tests {
                 namespaces: HashMap::new(),
             };
             nmspc_scope.contents.insert(String::from("z"),
-                ScopeItem::Var("raw_z".to_string(), IRType::F64));
+                ScopeItem::Var("raw_z".to_string(), IRType::F64, false));
             nmspc_scope.contents.insert(String::from("w"),
                 ScopeItem::Const(LitVal::Float(3.7)));
             scope.namespaces.insert(String::from("n"), nmspc_scope);
@@ -613,7 +613,7 @@ mod tests {
                         Box::new(Expr::Lit(Literal::Int(9)))))),
                 get_test_scope(), IRType::I64),
             vec![
-                (IRType::I32, IR::LocalGet("raw_x".to_string())),
+                (IRType::I32, IR::GlobalGet("raw_x".to_string())),
                 (IRType::I64, IR::Cast(IRType::I32)),
                 (IRType::I64, IR::LitInt(5)),
                 (IRType::I64, IR::LitInt(9)),
