@@ -1,4 +1,3 @@
-IMPORT "console" "log" AS log : console (I32 sre, len)
 IMPORT "env" "textUtf8" AS textUtf8 (I32 ptr, len, x, y)
 
 VAR
@@ -17,6 +16,7 @@ EXPORT "update"
 I32 hx := 10, hy := 10,
     wx := 20, wy := 40,
 DO
-  textUtf8(hello, 6, hx, hy);
-  textUtf8(world, 6, wx, wy)
+  textUtf8(hello, helloLen, hx, hy);
+  textUtf8(world, worldLen, wx, wy)
 END
+

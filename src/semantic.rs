@@ -19,7 +19,7 @@ use std::{
 enum LitVal { Int(i64), Float(f64), Str(String) }
 #[derive(Clone, Debug)]
 enum ScopeItem {
-    Var(String, IRType, bool), // raw_name, type, local
+    Var(String, IRType, bool), // raw_name, type, localp
     Const(LitVal), // value
     Proc(String, Vec<IRType>, IRType), // raw_name, arg types, return type
     None, // used as a return value
