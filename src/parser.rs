@@ -1,6 +1,7 @@
 use crate::{
     ast::*,
     lexer::Token,
+    errors::report_parser_error,
 };
 use logos::Logos;
 use chumsky::{
@@ -59,7 +60,9 @@ pub fn parse_str_top_level(input: &str) -> Result<TopLevel<'_>, Vec<Rich<'_, Tok
     top_level().parse(token_stream).into_result()
 }
 
-pub fn parse_str_program(input: &str) -> Result<Program<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
+pub fn parse_str_program<'a>(
+    input: &'a str, source_name: &'a String, source: &'a str
+) -> Program<'a> {
     let token_iter = Token::lexer(input)
         .spanned() .map(|(tok, span)| match tok {
             Ok(tok) => (tok, span.into()),
@@ -68,7 +71,15 @@ pub fn parse_str_program(input: &str) -> Result<Program<'_>, Vec<Rich<'_, Token<
     let token_stream = Stream::from_iter(token_iter)
         .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
 
-    program().parse(token_stream).into_result()
+    let (tokens, errors) = program().parse(token_stream).into_output_errors();
+    for error in errors {
+        report_parser_error(error, source_name, source);
+    }
+
+    match tokens {
+        Some(tokens) => tokens,
+        None => vec![],
+    }
 }
 
 

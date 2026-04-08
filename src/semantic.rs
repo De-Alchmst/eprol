@@ -49,13 +49,17 @@ fn get_data_set<'a>() -> &'static Mutex<HashSet<String>> {
 pub static mut FOUND_ERRORS: bool = false;
 pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let source = read_to_string(source_name).expect("Failed to read source file");
-    let ast = parse_str_program(&source).expect("Failed to parse source file");
+    let ast = parse_str_program(&source, source_name, &source);
 
     let output_files = HashSet::new();
     let mut scope = Scope {
         contents: HashMap::new(),
         namespaces: HashMap::new(),
     };
+
+    if ast.len() == 0 {
+        return output_files;
+    }
 
     // imports must be first
     let mut import_ir: ImportIRList = vec![];

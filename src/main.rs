@@ -5,6 +5,7 @@ pub mod ir;
 pub mod semantic;
 pub mod codegen;
 pub mod name_encoding;
+pub mod errors;
 
 use std::env;
 use semantic::analyse_and_compile;
