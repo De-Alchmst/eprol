@@ -206,12 +206,25 @@ where
 }
 
 
+fn malformed_stmt<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Stmt<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    // Malform statement
+    stmt().or_not().ignore_then(none_of([Token::Semicolon, Token::End])
+        .repeated()
+        .at_least(1)
+        .to(Stmt::Error))
+}
+
+
 fn stmt_vect<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<Stmt<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    stmt()
+    malformed_stmt().or(stmt())
         .separated_by(
             just(Token::Semicolon)
             .repeated()

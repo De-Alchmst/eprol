@@ -13,7 +13,7 @@ pub enum Type {
     Proc(Vec<Type>, Box<Type>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Binop {
     Add,
     Sub,
@@ -34,20 +34,20 @@ pub enum Binop {
     Nxor,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal<'a> {
     Int(i64),
     Float(f64),
     Str(&'a str),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Unop {
     Neg,
     Not,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr<'a> {
     Lit(Literal<'a>),
     Unop(Unop, Box<Expr<'a>>),
@@ -56,11 +56,12 @@ pub enum Expr<'a> {
     ProcCall(Ident<'a>, Vec<Expr<'a>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
     Assign(Ident<'a>, Expr<'a>),
     Return(Expr<'a>),
+    Error,
 }
 
 pub type VarDeclBlock<'a> = (Type, Vec<(&'a str, Option<Expr<'a>>)>);

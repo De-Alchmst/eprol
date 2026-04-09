@@ -16,8 +16,8 @@ EXPORT "update"
 I32 hx := 10, hy := 10,
     wx := 20, wy := 40,
 DO
+  dfdsf dstextU
   textUtf8(hello, helloLen, hx, hy);
-  fghj
   textUtf8(world, worldLen, wx, wy)
 END
 
