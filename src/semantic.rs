@@ -514,8 +514,6 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
             left_ir
         },
 
-
-
         // PROC CALLS
         Expr::ProcCall(idnt, args) => {
             let val = scope.search(idnt);
@@ -541,7 +539,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
             }
         },
 
-        // _ => vec![(IRType::Error, IR::Error)]
+        // Malformed expressions, errors already reported
+        Expr::Malformed => vec![(expects, IR::Error)],
     }
 }
 

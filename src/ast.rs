@@ -54,6 +54,7 @@ pub enum Expr<'a> {
     Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
     Ident(Ident<'a>),
     ProcCall(Ident<'a>, Vec<Expr<'a>>),
+    Malformed,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,7 +62,7 @@ pub enum Stmt<'a> {
     Expr(Expr<'a>),
     Assign(Ident<'a>, Expr<'a>),
     Return(Expr<'a>),
-    Error,
+    Malformed,
 }
 
 pub type VarDeclBlock<'a> = (Type, Vec<(&'a str, Option<Expr<'a>>)>);

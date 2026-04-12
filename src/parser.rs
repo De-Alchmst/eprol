@@ -177,12 +177,47 @@ where
             }, Box::new(lhs), Box::new(rhs))
         );
 
-        binop_sum
+        let expr_garbage = none_of([
+            Token::Semicolon, Token::End, Token::Comma, Token::Do,
+            Token::To, Token::Downto, Token::Until, Token::Step,
+            Token::LRound, Token::RRound,
+        ])
+        .repeated()
+        .at_least(1);
+
+        // Malform expression
+        // might start with matching a valid expression
+        // for example in `abc def + 42`, `abc` is a valid expression, but it's not
+        // as a whole
+        choice((
+            // valid expression with trailing garbage
+            binop_sum.clone().ignore_then(
+                expr_garbage.clone()
+            )
+            .validate(|_, e, emitter| {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    "Malformed expression"));
+                Expr::Malformed
+            }),
+
+            // valid expression
+            binop_sum,
+
+            // leading garbage
+            expr_garbage
+            .validate(|_, e, emitter| {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    "Malformed expression"));
+                Expr::Malformed
+            }),
+        ))
     })
 }
 
 
-fn stmt<'tokens, 'src: 'tokens, I>(
+fn bare_stmt<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Stmt<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
@@ -200,22 +235,44 @@ where
         .ignore_then(expr())
         .map(|e| Stmt::Return(e)),
 
-        // JUST EXPR
-        expr().map(|e| Stmt::Expr(e)),
+        // PROC CALL
+        // TODO: migrate to dedicated Stmt::ProcCall
+        ident()
+            .then(
+                expr()
+                .separated_by(just(Token::Comma))
+                .collect::<Vec<_>>()
+                .delimited_by(just(Token::LRound), just(Token::RRound)))
+            .map(|(proc, args)|
+                Stmt::Expr(Expr::ProcCall(proc, args))),
     ))
 }
 
 
-fn malformed_stmt<'tokens, 'src: 'tokens, I>(
+fn stmt<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Stmt<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    // Malform statement
-    stmt().or_not().ignore_then(none_of([Token::Semicolon, Token::End])
-        .repeated()
-        .at_least(1)
-        .to(Stmt::Error))
+    choice((
+        // Malform statement
+        // might start with matching a valid statement
+        // for example in `abc def := 42`, `abc` is a valid statement, but it's not
+        // as a whole
+        bare_stmt().or_not().ignore_then(
+            none_of([Token::Semicolon, Token::End])
+            .repeated()
+            .at_least(1)
+        )
+        .validate(|_, e, emitter| {
+            emitter.emit(Rich::custom(
+                e.span(),
+                "Malformed statement"));
+            Stmt::Malformed
+        }),
+
+        bare_stmt()
+    ))
 }
 
 
@@ -224,7 +281,7 @@ fn stmt_vect<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    malformed_stmt().or(stmt())
+    stmt()
         .separated_by(
             just(Token::Semicolon)
             .repeated()
