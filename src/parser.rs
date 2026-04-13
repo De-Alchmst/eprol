@@ -114,7 +114,9 @@ where
                 Token::True => Literal::Int(1),
                 Token::False => Literal::Int(0),
                 Token::String(s) => Literal::Str(s),
-            }.map_with(|lit, e| Expr::Lit(e.span(), lit)),
+            }.map_with(|lit, e| Expr::Lit(
+                    if !cfg!(test) {e.span()} else {PS},
+                    lit)),
 
             // PARENTHESISED
             exp.clone().delimited_by(just(Token::LRound), just(Token::RRound)),
@@ -127,10 +129,13 @@ where
                     .collect::<Vec<_>>()
                     .delimited_by(just(Token::LRound), just(Token::RRound)))
                 .map_with(|(proc, args), e|
-                    Expr::ProcCall(e.span(), proc, args)),
+                    Expr::ProcCall(
+                        if !cfg!(test) {e.span()} else {PS},
+                        proc, args)),
 
             // IDENT
-            ident().map_with(|i, e| Expr::Ident(e.span(), i)),
+            ident().map_with(|i, e|
+                Expr::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
         )).boxed();
 
         let unop = choice((
@@ -139,13 +144,15 @@ where
             just(Token::Not)
         ))
             .repeated()
-            .foldr_with(end_node, |op, rhs, e|
+            .foldr_with(end_node, |op, rhs, e| {
+                let span = if !cfg!(test) {e.span()} else {PS};
                 match op {
-                    Token::Minus => Expr::Unop(e.span(), Unop::Neg, Box::new(rhs)),
-                    Token::Not   => Expr::Unop(e.span(), Unop::Not, Box::new(rhs)),
+                    Token::Minus => Expr::Unop(span, Unop::Neg, Box::new(rhs)),
+                    Token::Not   => Expr::Unop(span, Unop::Not, Box::new(rhs)),
                     Token::Plus  => rhs,
                     _ => unreachable!(),
-                });
+                }
+            });
 
         let binop_product = unop.clone().foldl_with(
             choice((
@@ -156,7 +163,7 @@ where
             .repeated(),
             |lhs, (op, rhs), e|
             Expr::Binop(
-                e.span(),
+                if !cfg!(test) {e.span()} else {PS},
                 match op {
                     Token::Star  => Binop::Mul,
                     Token::Slash => Binop::Div,
@@ -174,7 +181,7 @@ where
             .repeated(),
             |lhs, (op, rhs), e|
             Expr::Binop(
-                e.span(),
+                if !cfg!(test) {e.span()} else {PS},
                 match op {
                     Token::Plus  => Binop::Add,
                     Token::Minus => Binop::Sub,
@@ -183,11 +190,14 @@ where
                 Box::new(lhs), Box::new(rhs))
         );
 
-        let expr_garbage = none_of([
-            Token::Semicolon, Token::End, Token::Comma, Token::Do,
-            Token::To, Token::Downto, Token::Until, Token::Step,
-            Token::LRound, Token::RRound,
-        ])
+        // TODO: handle types as garbage terminators...
+        let expr_garbage =
+         none_of([
+             Token::Semicolon, Token::End, Token::Comma, Token::Do,
+             Token::To, Token::Downto, Token::Until, Token::Step,
+             Token::LRound, Token::RRound, Token::Const, Token::Var,
+             Token::Static
+         ])
         .repeated()
         .at_least(1);
 
@@ -250,7 +260,9 @@ where
                 .collect::<Vec<_>>()
                 .delimited_by(just(Token::LRound), just(Token::RRound)))
             .map_with(|(proc, args), e|
-                Stmt::Expr(Expr::ProcCall(e.span(), proc, args))),
+                Stmt::Expr(Expr::ProcCall(
+                    if !cfg!(test) {e.span()} else {PS},
+                    proc, args))),
     ))
 }
 

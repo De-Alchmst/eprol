@@ -21,4 +21,3 @@ DO
   textUtf8(world, worldLen, wx, wy #$$ C);
   hx := hx + 1 FOO
 END
-
