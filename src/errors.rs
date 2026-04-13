@@ -8,7 +8,7 @@ use chumsky::prelude::{
 };
 
 pub fn report_parser_error<'a>(
-    error: Rich<'_, Token<'_>, SimpleSpan<usize, ()>>,
+    error: Rich<'_, Token<'_>, SimpleSpan>,
     source_name: &'a String,
     source: &'a str,
 ){

@@ -1,3 +1,8 @@
+use chumsky::span::SimpleSpan;
+
+// phony span
+pub static PS: SimpleSpan = SimpleSpan { start: 0, end: 0, context: () };
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Ident<'a> {
     pub name: &'a str,
@@ -49,11 +54,11 @@ pub enum Unop {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr<'a> {
-    Lit(Literal<'a>),
-    Unop(Unop, Box<Expr<'a>>),
-    Binop(Binop, Box<Expr<'a>>, Box<Expr<'a>>),
-    Ident(Ident<'a>),
-    ProcCall(Ident<'a>, Vec<Expr<'a>>),
+    Lit(SimpleSpan, Literal<'a>),
+    Unop(SimpleSpan, Unop, Box<Expr<'a>>),
+    Binop(SimpleSpan, Binop, Box<Expr<'a>>, Box<Expr<'a>>),
+    Ident(SimpleSpan, Ident<'a>),
+    ProcCall(SimpleSpan, Ident<'a>, Vec<Expr<'a>>),
     Malformed,
 }
 

@@ -413,7 +413,7 @@ fn stmt2ir<'a>(stmt: &Stmt<'a>, scope: &Scope) -> IRList {
 fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
     match expr {
         // LITERALS
-        Expr::Lit(lit) => match lit {
+        Expr::Lit(_span, lit) => match lit {
             Literal::Int(x) => match expects {
                 IRType::Int | IRType::I64 | IRType::Any => vec![(IRType::I64, IR::LitInt(*x))],
                 IRType::I32 => vec![(IRType::I32, IR::LitInt(*x))],
@@ -439,7 +439,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         },
 
         // UNOPS
-        Expr::Unop(op, inner) => {
+        Expr::Unop(_span, op, inner) => {
             let mut inner_ir = expr2ir(inner, scope, expects);
             let inner_type   = irlist_type(&inner_ir);
             match op {
@@ -451,18 +451,18 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         }
 
         // IDENTS
-        Expr::Ident(idnt) => {
+        Expr::Ident(_span, idnt) => {
             let val = scope.search(idnt);
             match &val {
                 // constants -> place as literals
                 ScopeItem::Const(lit_val) => match lit_val {
                     LitVal::Int(x)
-                        => expr2ir(&Expr::Lit(Literal::Int(*x)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Int(*x)), scope, expects),
                     LitVal::Float(x)
-                        => expr2ir(&Expr::Lit(Literal::Float(*x)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Float(*x)), scope, expects),
                     // String constants not supported yet - would need owned strings in IR
                     LitVal::Str(s)
-                        => expr2ir(&Expr::Lit(Literal::Str(s)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Str(s)), scope, expects),
                 },
 
                 // variables -> place and cast if needed
@@ -488,7 +488,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         // match expects
         // TODO:: do binop at compiletime with literals
         // TODO:: add unsigned support for binops
-        Expr::Binop(op, left, right) => {
+        Expr::Binop(_span, op, left, right) => {
             // evaluate both sides
             let mut left_ir = expr2ir(left, scope, expects.clone());
             let left_type = irlist_type(&left_ir);
@@ -515,7 +515,7 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         },
 
         // PROC CALLS
-        Expr::ProcCall(idnt, args) => {
+        Expr::ProcCall(_span, idnt, args) => {
             let val = scope.search(idnt);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
@@ -583,8 +583,8 @@ mod tests {
         // unop ident
         assert_eq!(
             expr2ir(
-                &Expr::Unop(Unop::Neg, Box::new(
-                        Expr::Ident(Ident {name: "w", namespace: vec!["n"]}))),
+                &Expr::Unop(PS, Unop::Neg, Box::new(
+                        Expr::Ident(PS, Ident {name: "w", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32),
             vec![
                 (IRType::F32, IR::LitFloat(3.7)),
@@ -595,8 +595,8 @@ mod tests {
         // nonexistent ident
         assert_eq!(
             expr2ir(
-                &Expr::Unop(Unop::Neg, Box::new(
-                        Expr::Ident(Ident {name: "nonexistetn", namespace: vec!["n"]}))),
+                &Expr::Unop(PS, Unop::Neg, Box::new(
+                        Expr::Ident(PS, Ident {name: "nonexistetn", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32),
             vec![
                 (IRType::Error, IR::Error),
@@ -609,11 +609,11 @@ mod tests {
     fn test_expr2ir_binop_cast() {
         assert_eq!(
             expr2ir(
-                &Expr::Binop(Binop::Add,
-                    Box::new(Expr::Ident(Ident {name: "x", namespace: vec![]})),
-                    Box::new(Expr::Binop(Binop::Mul,
-                        Box::new(Expr::Lit(Literal::Int(5))),
-                        Box::new(Expr::Lit(Literal::Int(9)))))),
+                &Expr::Binop(PS, Binop::Add,
+                    Box::new(Expr::Ident(PS, Ident {name: "x", namespace: vec![]})),
+                    Box::new(Expr::Binop(PS, Binop::Mul,
+                        Box::new(Expr::Lit(PS, Literal::Int(5))),
+                        Box::new(Expr::Lit(PS, Literal::Int(9)))))),
                 get_test_scope(), IRType::I64),
             vec![
                 (IRType::I32, IR::GlobalGet("raw_x".to_string())),
@@ -630,9 +630,9 @@ mod tests {
     fn test_expr2ir_proc_call() {
         assert_eq!(
             expr2ir(
-                &Expr::ProcCall(Ident {name: "f", namespace: vec![]}, vec![
-                    Expr::Lit(Literal::Int(5)),
-                    Expr::Lit(Literal::Float(3.7)),
+                &Expr::ProcCall(PS, Ident {name: "f", namespace: vec![]}, vec![
+                    Expr::Lit(PS, Literal::Int(5)),
+                    Expr::Lit(PS, Literal::Float(3.7)),
                 ]),
                 get_test_scope(), IRType::F32),
             vec![

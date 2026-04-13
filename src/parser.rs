@@ -109,12 +109,12 @@ where
         let end_node = choice((
             // LITERAL
             select!{
-                Token::Int(n) => Expr::Lit(Literal::Int(n.parse().unwrap_or(0))),
-                Token::Float(n) => Expr::Lit(Literal::Float(n.parse().unwrap_or(0.0))),
-                Token::True => Expr::Lit(Literal::Int(1)),
-                Token::False => Expr::Lit(Literal::Int(0)),
-                Token::String(s) => Expr::Lit(Literal::Str(s))
-            },
+                Token::Int(n) => Literal::Int(n.parse().unwrap_or(0)),
+                Token::Float(n) => Literal::Float(n.parse().unwrap_or(0.0)),
+                Token::True => Literal::Int(1),
+                Token::False => Literal::Int(0),
+                Token::String(s) => Literal::Str(s),
+            }.map_with(|lit, e| Expr::Lit(e.span(), lit)),
 
             // PARENTHESISED
             exp.clone().delimited_by(just(Token::LRound), just(Token::RRound)),
@@ -126,11 +126,11 @@ where
                     .separated_by(just(Token::Comma))
                     .collect::<Vec<_>>()
                     .delimited_by(just(Token::LRound), just(Token::RRound)))
-                .map(|(proc, args)|
-                    Expr::ProcCall(proc, args)),
+                .map_with(|(proc, args), e|
+                    Expr::ProcCall(e.span(), proc, args)),
 
             // IDENT
-            ident().map(Expr::Ident),
+            ident().map_with(|i, e| Expr::Ident(e.span(), i)),
         )).boxed();
 
         let unop = choice((
@@ -139,42 +139,48 @@ where
             just(Token::Not)
         ))
             .repeated()
-            .foldr(end_node, |op, rhs|
+            .foldr_with(end_node, |op, rhs, e|
                 match op {
-                    Token::Minus => Expr::Unop(Unop::Neg, Box::new(rhs)),
-                    Token::Not   => Expr::Unop(Unop::Not, Box::new(rhs)),
+                    Token::Minus => Expr::Unop(e.span(), Unop::Neg, Box::new(rhs)),
+                    Token::Not   => Expr::Unop(e.span(), Unop::Not, Box::new(rhs)),
                     Token::Plus  => rhs,
                     _ => unreachable!(),
                 });
 
-        let binop_product = unop.clone().foldl(
+        let binop_product = unop.clone().foldl_with(
             choice((
                 just(Token::Star),
                 just(Token::Slash),
             ))
             .then(unop)
             .repeated(),
-            |lhs, (op, rhs)|
-            Expr::Binop(match op {
-                Token::Star  => Binop::Mul,
-                Token::Slash => Binop::Div,
-                _ => unreachable!(),
-            }, Box::new(lhs), Box::new(rhs))
+            |lhs, (op, rhs), e|
+            Expr::Binop(
+                e.span(),
+                match op {
+                    Token::Star  => Binop::Mul,
+                    Token::Slash => Binop::Div,
+                    _ => unreachable!(),
+                },
+                Box::new(lhs), Box::new(rhs))
         );
 
-        let binop_sum = binop_product.clone().foldl(
+        let binop_sum = binop_product.clone().foldl_with(
             choice((
                 just(Token::Plus),
                 just(Token::Minus),
             ))
             .then(binop_product)
             .repeated(),
-            |lhs, (op, rhs)|
-            Expr::Binop(match op {
-                Token::Plus  => Binop::Add,
-                Token::Minus => Binop::Sub,
-                _ => unreachable!(),
-            }, Box::new(lhs), Box::new(rhs))
+            |lhs, (op, rhs), e|
+            Expr::Binop(
+                e.span(),
+                match op {
+                    Token::Plus  => Binop::Add,
+                    Token::Minus => Binop::Sub,
+                    _ => unreachable!(),
+                },
+                Box::new(lhs), Box::new(rhs))
         );
 
         let expr_garbage = none_of([
@@ -243,8 +249,8 @@ where
                 .separated_by(just(Token::Comma))
                 .collect::<Vec<_>>()
                 .delimited_by(just(Token::LRound), just(Token::RRound)))
-            .map(|(proc, args)|
-                Stmt::Expr(Expr::ProcCall(proc, args))),
+            .map_with(|(proc, args), e|
+                Stmt::Expr(Expr::ProcCall(e.span(), proc, args))),
     ))
 }
 
@@ -564,57 +570,57 @@ mod tests {
     use super::*;
     #[test]
     fn basic_expr() {
-        assert_eq!(parse_str_expr("42"), Ok(Expr::Lit(Literal::Int(42))));
+        assert_eq!(parse_str_expr("42"), Ok(Expr::Lit(PS, Literal::Int(42))));
     }
 
     #[test]
     fn basic_unop() {
         assert_eq!(parse_str_expr("NOT --+-42"),
-        Ok(Expr::Unop(Unop::Not,
-                Box::new(Expr::Unop(Unop::Neg,
-                    Box::new(Expr::Unop(Unop::Neg,
-                        Box::new(Expr::Unop(Unop::Neg,
-                            Box::new(Expr::Lit(Literal::Int(42))))))))))))
+        Ok(Expr::Unop(PS, Unop::Not,
+                Box::new(Expr::Unop(PS, Unop::Neg,
+                    Box::new(Expr::Unop(PS, Unop::Neg,
+                        Box::new(Expr::Unop(PS, Unop::Neg,
+                            Box::new(Expr::Lit(PS, Literal::Int(42))))))))))))
     }
 
     #[test]
     fn basic_binop() {
         assert_eq!(parse_str_expr("-2 + (6 - 9) * +7 + 9"),
-        Ok(Expr::Binop(Binop::Add,
-                Box::new(Expr::Binop(Binop::Add,
-                        Box::new(Expr::Unop(Unop::Neg,
-                                Box::new(Expr::Lit(Literal::Int(2))))),
-                        Box::new(Expr::Binop(Binop::Mul,
-                                Box::new(Expr::Binop(Binop::Sub,
-                                        Box::new(Expr::Lit(Literal::Int(6))),
-                                        Box::new(Expr::Lit(Literal::Int(9))))),
-                                Box::new(Expr::Lit(Literal::Int(7))))))),
-                Box::new(Expr::Lit(Literal::Int(9))))))
+        Ok(Expr::Binop(PS, Binop::Add,
+                Box::new(Expr::Binop(PS, Binop::Add,
+                        Box::new(Expr::Unop(PS, Unop::Neg,
+                                Box::new(Expr::Lit(PS, Literal::Int(2))))),
+                        Box::new(Expr::Binop(PS, Binop::Mul,
+                                Box::new(Expr::Binop(PS, Binop::Sub,
+                                        Box::new(Expr::Lit(PS, Literal::Int(6))),
+                                        Box::new(Expr::Lit(PS, Literal::Int(9))))),
+                                Box::new(Expr::Lit(PS, Literal::Int(7))))))),
+                Box::new(Expr::Lit(PS, Literal::Int(9))))))
     }
 
     #[test]
     fn basic_idents() {
         assert_eq!(parse_str_expr("a.b.c + ni"),
-        Ok(Expr::Binop(Binop::Add,
-                Box::new(Expr::Ident(Ident { name: "a", namespace: vec!["b", "c"] })),
-                Box::new(Expr::Ident(Ident { name: "ni", namespace: vec![] })))))
+        Ok(Expr::Binop(PS, Binop::Add,
+                Box::new(Expr::Ident(PS, Ident { name: "a",  namespace: vec!["b", "c"] })),
+                Box::new(Expr::Ident(PS, Ident { name: "ni", namespace: vec![] })))))
     }
 
     #[test]
     fn assignment() {
         assert_eq!(parse_str_stmt("foo := 1-2"),
         Ok(Stmt::Assign(Ident {name: "foo", namespace: vec![]},
-                Expr::Binop(Binop::Sub,
-                    Box::new(Expr::Lit(Literal::Int(1))),
-                    Box::new(Expr::Lit(Literal::Int(2)))))))
+                Expr::Binop(PS, Binop::Sub,
+                    Box::new(Expr::Lit(PS, Literal::Int(1))),
+                    Box::new(Expr::Lit(PS, Literal::Int(2)))))))
     }
 
     #[test]
     fn expr_stmt() {
         assert_eq!(parse_str_expr("3+7"),
-        Ok(Expr::Binop(Binop::Add,
-                Box::new(Expr::Lit(Literal::Int(3))),
-                Box::new(Expr::Lit(Literal::Int(7))))))
+        Ok(Expr::Binop(PS, Binop::Add,
+                Box::new(Expr::Lit(PS, Literal::Int(3))),
+                Box::new(Expr::Lit(PS, Literal::Int(7))))))
     }
 
     #[test]
@@ -642,7 +648,7 @@ mod tests {
                 vec![
                     (Type::I32, vec![
                         ("foo", None),
-                        ("bar", Some(Expr::Lit(Literal::Int(3)))),
+                        ("bar", Some(Expr::Lit(PS, Literal::Int(3)))),
                         ("baz", None),
                     ])
                 ])));
@@ -651,7 +657,7 @@ mod tests {
         Ok(TopLevel::VarDecl(vec![],
                 vec![
                     (Type::I32, vec![("foo", None)]),
-                    (Type::I64, vec![("bar", Some(Expr::Lit(Literal::Int(7))))]),
+                    (Type::I64, vec![("bar", Some(Expr::Lit(PS, Literal::Int(7))))]),
                 ])));
     }
 
@@ -663,21 +669,21 @@ mod tests {
         assert_eq!(parse_str_top_level("CONST : re.ee foo = 3, bar = 7, END"),
         Ok(TopLevel::ConstDecl(vec!["re", "ee"],
                 vec![
-                    ("foo", Expr::Lit(Literal::Int(3))),
-                    ("bar", Expr::Lit(Literal::Int(7))),
+                    ("foo", Expr::Lit(PS, Literal::Int(3))),
+                    ("bar", Expr::Lit(PS, Literal::Int(7))),
                 ])));
     }
 
     #[test]
     fn proc_call() {
         assert_eq!(parse_str_expr("a.b(c(), 1+2)"),
-        Ok(Expr::ProcCall(Ident { name: "a", namespace: vec!["b"] },
+        Ok(Expr::ProcCall(PS, Ident { name: "a", namespace: vec!["b"] },
                 vec![
-                    Expr::ProcCall(Ident { name: "c", namespace: vec![] },
+                    Expr::ProcCall(PS, Ident { name: "c", namespace: vec![] },
                         vec![]),
-                    Expr::Binop(Binop::Add,
-                        Box::new(Expr::Lit(Literal::Int(1))),
-                        Box::new(Expr::Lit(Literal::Int(2))))
+                    Expr::Binop(PS, Binop::Add,
+                        Box::new(Expr::Lit(PS, Literal::Int(1))),
+                        Box::new(Expr::Lit(PS, Literal::Int(2))))
                 ])))
     }
 
@@ -705,22 +711,22 @@ mod tests {
                         (Type::I32, vec![("foo", None)]),
                     ]),
                     ProcDeclBlock::Const(vec![
-                        ("bar", Expr::Lit(Literal::Int(1)))
+                        ("bar", Expr::Lit(PS, Literal::Int(1)))
                     ]),
                     ProcDeclBlock::Var(vec![
                         (Type::I64, vec![("baz", None)]),
                     ]),
                 ], vec![
                     Stmt::Assign(Ident { name: "foo", namespace: vec![] },
-                        Expr::Lit(Literal::Int(3))),
-                    Stmt::Return(Expr::Lit(Literal::Int(7)))
+                        Expr::Lit(PS, Literal::Int(3))),
+                    Stmt::Return(Expr::Lit(PS, Literal::Int(7)))
                 ])));
 
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
         Ok(TopLevel::ProcDecl(Ident {name: "foo", namespace: vec![]},
                 vec![], Type::Void, None, vec![], vec![
                     Stmt::Assign(Ident { name: "i", namespace: vec![] },
-                        Expr::Lit(Literal::Int(1)))
+                        Expr::Lit(PS, Literal::Int(1)))
                 ])))
     }
 }
