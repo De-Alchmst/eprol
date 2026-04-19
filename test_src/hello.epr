@@ -5,6 +5,7 @@ I32 hello := "Hello,",
     world := "world!",
     helloLen := 6,
     worldLen := 6,
+F64 bar := 6.9
 END
 
 PROC start
@@ -18,5 +19,7 @@ I32 hx := 10, hy := 10,
 DO
   textUtf8(hello, helloLen, hx, hy);
   textUtf8(world, worldLen, wx, wy);
-  hx := hx + 1
+  textUtf8(WORLD, start, wx, bar);
+  FOO(bar);
+  start(5);
 END

@@ -1,4 +1,8 @@
-use crate::ast::Type;
+use crate::{
+    ast::Type,
+    errors::report_semantic_error,
+};
+use chumsky::span::SimpleSpan;
 use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -79,13 +83,14 @@ impl fmt::Display for IRType  {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IRType::Int => write!(f, "int"),
-            IRType::I32 => write!(f, "i32"),
-            IRType::I64 => write!(f, "i64"),
+            IRType::I32 => write!(f, "I32"),
+            IRType::I64 => write!(f, "I64"),
             IRType::Float => write!(f, "float"),
-            IRType::F32 => write!(f, "f32"),
-            IRType::F64 => write!(f, "f64"),
+            IRType::F32 => write!(f, "F32"),
+            IRType::F64 => write!(f, "F64"),
             IRType::Func(args, ret) => {
-                let args_str = args.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
+                let args_str = args.iter().map(|t|
+                    t.to_string()).collect::<Vec<_>>().join(", ");
                 write!(f, "({}) -> {}", args_str, ret)
             },
             IRType::Void => write!(f, "void"),
@@ -103,47 +108,83 @@ pub fn default_irtype_val(typ: &IRType) -> (IRType, IR) {
         IRType::Float | IRType::F32 | IRType::F64
             => (typ.clone(), IR::LitFloat(0.0)),
         IRType::Func(_, _) => (typ.clone(), IR::Error),
-        IRType::Void => (typ.clone(), IR::Drop),
+        IRType::Void => (typ.clone(), IR::Drop), // maybe return something else?
         IRType::Error => (typ.clone(), IR::Error),
     }
 }
 
 
 // insert automatic cast where needed
-pub fn ir_resolve_types(got: (IRType, IR), expected: IRType) -> IRList {
+pub fn ir_resolve_types(
+    got: (IRType, IR),
+    expected: IRType,
+    span: &SimpleSpan,
+    source_name: &String,
+    source: &str,
+) -> IRList {
+    let report_error = || {
+        report_semantic_error(
+            span, source_name, source,
+            "Incompatible types",
+            format!("Expected {:?} found {:?}", got.0, expected)
+        )
+    };
+    
     let current = got.0.clone();
     match expected {
         IRType::I32 => match current {
             IRType::I32 | IRType::Int | IRType::Any => vec![got],
             IRType::I64 => vec![got, (IRType::I32, IR::Cast(IRType::I64))],
-            _ => vec![(IRType::Error, IR::Error)]
+            _ => {
+                report_error();
+                vec![(IRType::Error, IR::Error)]
+            }
         },
 
         IRType::I64 => match current {
             IRType::I64 | IRType::Int | IRType::Any => vec![got],
             IRType::I32 => vec![got, (IRType::I64, IR::Cast(IRType::I32))],
-            _ => vec![(IRType::Error, IR::Error)]
+            _ => {
+                report_error();
+                vec![(IRType::Error, IR::Error)]
+            }
         },
 
         IRType::F32 => match current {
             IRType::F32 | IRType::Float | IRType::Any => vec![got],
             IRType::F64 => vec![got, (IRType::F32, IR::Cast(IRType::F64))],
-            _ => vec![(IRType::Error, IR::Error)]
+            _ => {
+                report_error();
+                vec![(IRType::Error, IR::Error)]
+            }
         },
 
         IRType::F64 => match current {
             IRType::F64 | IRType::Float | IRType::Any => vec![got],
             IRType::F32 => vec![got, (IRType::F64, IR::Cast(IRType::F32))],
-            _ => vec![(IRType::Error, IR::Error)]
+            _ => {
+                report_error();
+                vec![(IRType::Error, IR::Error)]
+            }
         },
 
         IRType::Void => match current {
             IRType::Void | IRType::Any => vec![got],
-            _ => vec![(IRType::Error, IR::Error)]
+            _ => {
+                report_error();
+                vec![(IRType::Error, IR::Error)]
+            }
         },
 
         IRType::Any => vec![got],
 
-        _ => vec![(IRType::Error, IR::Error)]
+        _ => {
+            report_semantic_error(
+                span, source_name, source,
+                "Incompatible types",
+                format!("Casting not yet handled for type {:?}", expected)
+            );
+            vec![(IRType::Error, IR::Error)]
+        }
     }
 }

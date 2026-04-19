@@ -2,7 +2,10 @@ use crate::{
     ast::*,
     ir::*,
     parser::parse_str_program,
-    errors::report_semantic_error,
+    errors::{
+        report_semantic_error,
+        error_appeared,
+    },
     name_encoding::{
         raw_name,
         raw_arg_name,
@@ -263,14 +266,15 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
         }
     }
 
-    print_wat_header();
-    print_import_ir(&import_ir);
-    print_memory(1, vec!["env", "memory"]);
-    print_data(0x19a0, get_data_set().lock().unwrap().iter().cloned().collect());
-    print_top_level_ir(&regular_ir);
-    print_wat_footer();
-
-
+    // don't produce any code if errors found
+    if !error_appeared() {
+        print_wat_header();
+        print_import_ir(&import_ir);
+        print_memory(1, vec!["env", "memory"]);
+        print_data(0x19a0, get_data_set().lock().unwrap().iter().cloned().collect());
+        print_top_level_ir(&regular_ir);
+        print_wat_footer();
+    }
     
     output_files
 }
@@ -441,9 +445,7 @@ fn expr2ir<'a>(
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x as f64))],
                 _ => {
                     report_semantic_error(
-                        span,
-                        source_name,
-                        source,
+                        span, source_name, source,
                         "Incompatible types",
                         format!("Expected {:?}, found Int", expects)
                     );
@@ -456,9 +458,7 @@ fn expr2ir<'a>(
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x))],
                 _ => {
                     report_semantic_error(
-                        span,
-                        source_name,
-                        source,
+                        span, source_name, source,
                         "Incompatible types",
                         format!("Expected {:?}, found Float", expects)
                     );
@@ -475,9 +475,7 @@ fn expr2ir<'a>(
                     IRType::I64 => vec![(IRType::I64, IR::LitStr(s))],
                     _ => {
                         report_semantic_error(
-                            span,
-                            source_name,
-                            source,
+                            span, source_name, source,
                             "Incompatible types",
                             format!("Expected {:?}, found Int", expects)
                         );
@@ -500,7 +498,7 @@ fn expr2ir<'a>(
         }
 
         // IDENTS
-        Expr::Ident(_span, idnt) => {
+        Expr::Ident(span, idnt) => {
             let val = scope.search(idnt);
             match &val {
                 // constants -> place as literals
@@ -524,11 +522,26 @@ fn expr2ir<'a>(
                     } else {
                         (var_type.clone(), IR::GlobalGet(raw_name.clone()))
                     };
-                    ir_resolve_types(expr, expects)
+                    ir_resolve_types(expr, expects, span, source_name, source)
                 },
 
-                // proc/not found -> error
-                _ => {
+                // proc -> funcref not yet implemented -> error
+                ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "invalid identifier",
+                        "Can not pass procedures as values yet".to_string()
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
+
+                // not found -> error
+                ScopeItem::None => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "unknown identifier",
+                        format!("Identifier `{}` not found in scope", idnt.name)
+                    );
                     vec![(IRType::Error, IR::Error)]
                 },
             }
@@ -540,7 +553,7 @@ fn expr2ir<'a>(
         // match expects
         // TODO:: do binop at compiletime with literals
         // TODO:: add unsigned support for binops
-        Expr::Binop(_span, op, left, right) => {
+        Expr::Binop(span, op, left, right) => {
             // evaluate both sides
             let mut left_ir = expr2ir(left, scope, expects.clone(),
                                       source_name, source);
@@ -552,7 +565,8 @@ fn expr2ir<'a>(
             // fix right type if needed
             if right_type != left_type {
                 let last_right = right_ir.pop().unwrap_or((IRType::Error, IR::Error));
-                right_ir.extend(ir_resolve_types(last_right, left_type.clone()));
+                right_ir.extend(ir_resolve_types(last_right, left_type.clone(),
+                                                 span, source_name, source));
             }
 
             left_ir.extend(right_ir);
@@ -562,19 +576,32 @@ fn expr2ir<'a>(
                     Binop::Sub => IR::Sub,
                     Binop::Mul => IR::Mul(false),
                     Binop::Div => IR::Div(false),
-                    _ => IR::Error,
-                }), expects)
+                    _ => {
+                        report_semantic_error(
+                            span, source_name, source,
+                            "unsupported operator",
+                            format!("Operator {:?} not implemented yet", op)
+                        );
+                        IR::Error
+                    }
+                }), expects, span, source_name, source)
             );
             left_ir
         },
 
         // PROC CALLS
-        Expr::ProcCall(_span, idnt, args) => {
+        Expr::ProcCall(span, idnt, args) => {
             let val = scope.search(idnt);
             match val {
                 ScopeItem::Proc(raw_name, arg_types, ret_type) => {
                     // check args length
                     if arg_types.len() != args.len() {
+                        report_semantic_error(
+                            span, source_name, source,
+                            "invalid number of arguments",
+                            format!("Expected {} arguments, found {}",
+                                    arg_types.len(), args.len())
+                        );
                         return vec![(IRType::Error, IR::Error)];
                     }
 
@@ -585,16 +612,32 @@ fn expr2ir<'a>(
                                              source_name, source);
                         ir.extend(arg_ir);
                     }
-                    ir.extend(ir_resolve_types((ret_type.clone(),
-                                                IR::Call(raw_name)), expects));
+                    ir.extend(ir_resolve_types((ret_type.clone(), IR::Call(raw_name)),
+                                               expects, span, source_name, source));
                     ir
                 },
 
-                _ => vec![(IRType::Error, IR::Error)]
+                ScopeItem::Const(_) | ScopeItem::Var(_, _, _) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "not a procedure",
+                        format!("Identifier `{}` is not a procedure", idnt.name)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                },
+
+                ScopeItem::None => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "unknown identifier",
+                        format!("Identifier `{}` not found in scope", idnt.name)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                },
             }
         },
 
-        // Malformed expressions, errors already reported
+        // Malformed expressions, errors are already reported by the parser
         Expr::Malformed => vec![(expects, IR::Error)],
     }
 }

@@ -6,12 +6,21 @@ use chumsky::prelude::{
     Rich,
     SimpleSpan,
 };
+use::std::sync::Mutex;
+
+static ERROR_APPEARED: Mutex<bool> = Mutex::new(false);
+pub fn error_appeared() -> bool { *ERROR_APPEARED.lock().unwrap() }
+fn set_error_appeared() {
+    let mut error_appeared = ERROR_APPEARED.lock().unwrap();
+    *error_appeared = true;
+}
 
 pub fn report_parser_error<'a>(
     error: Rich<'_, Token<'_>, SimpleSpan>,
     source_name: &'a String,
     source: &'a str,
 ){
+    set_error_appeared();
     Report::build(ReportKind::Error, (source_name.clone(), error.span().into_range()))
         .with_config(ariadne::Config::new()
                         .with_index_type(ariadne::IndexType::Byte))
@@ -39,6 +48,7 @@ pub fn report_semantic_error<'a>(
     error_title: &'a str,
     error_message: String,
 ){
+    set_error_appeared();
     Report::build(ReportKind::Error, (source_name.clone(), span.into_range()))
         .with_config(ariadne::Config::new()
                         .with_index_type(ariadne::IndexType::Byte))
