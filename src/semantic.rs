@@ -449,14 +449,14 @@ fn stmt2ir<'a>(
             }
         }
 
-        // Stmt::Assign(left, right) => {
-        //     let (left_ir, left_type) = left_value2ir(left, scope, source_name,
-        //                                              source);
-        //     let mut right_ir = expr2ir(right, scope, left_type.clone(),
-        //                                source_name, source);
-        //     right_ir.extend(left_ir);
-        //     right_ir
-        // }
+        Stmt::Assign(left, right) => {
+            let (left_ir, left_type) = left_value2ir(left, scope, source_name,
+                                                     source);
+            let mut right_ir = expr2ir(right, scope, left_type.clone(),
+                                       source_name, source);
+            right_ir.extend(left_ir);
+            right_ir
+        }
 
         _ => vec![(IRType::Void, IR::Error)] // TODO: handle other statements
     }
@@ -588,10 +588,10 @@ fn expr2ir<'a>(
         // TODO:: add unsigned support for binops
         Expr::Binop(span, op, left, right) => {
             // evaluate both sides
-            let mut left_ir = expr2ir(left, scope, expects.clone(),
+            let mut left_ir = expr2ir(left, scope, IRType::Any,
                                       source_name, source);
             let mut left_type = irlist_type(&left_ir);
-            if left_type == IRType::Error { left_type = expects.clone(); }
+            if left_type == IRType::Error { left_type = IRType::Any; }
 
             let mut right_ir = expr2ir(right, scope, left_type.clone(),
                                        source_name, source);
@@ -674,6 +674,63 @@ fn expr2ir<'a>(
 
         // Malformed expressions, errors are already reported by the parser
         Expr::Malformed => vec![(expects, IR::Error)],
+    }
+}
+
+fn left_value2ir<'a>(
+    lv: &LeftValue<'a>, scope: &Scope,
+    source_name: &String,
+    source: &str,
+) -> (IRList, IRType) {
+    match lv {
+        LeftValue::Ident(span, idnt) => {
+            let val = scope.search(idnt);
+            match &val {
+                // variables
+                ScopeItem::Var(raw_name, var_type, localp) => {
+                    (vec![(IRType::Void,
+                            if *localp { IR::LocalSet (raw_name.clone()) }
+                            else       { IR::GlobalSet(raw_name.clone()) })
+                         ],
+                     var_type.clone())
+                }
+
+                // constants
+                ScopeItem::Const(_) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "invalid left value",
+                        "Cannot assign to constants".to_string()
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+
+                // proc
+                ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "invalid left value",
+                        "Cannot assign to procedure".to_string()
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+
+                // not found -> error
+                ScopeItem::None => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "unknown identifier",
+                        format!("Identifier `{}` not found in scope", idnt.name)
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+            }
+        }
+
+        LeftValue::Malformed => {
+            // malformed left value, error already reported by parser
+            (vec![(IRType::Error, IR::Error)], IRType::Any)
+        }
     }
 }
 
