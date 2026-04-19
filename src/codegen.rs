@@ -131,6 +131,7 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
         IR::LocalGet(raw_name) => format!("local.get {raw_name}"),
         IR::LocalSet(raw_name) => format!("local.set {raw_name}"),
         IR::Add => format!("{typ}.add"),
+        IR::Return => format!("return"),
 
         IR::LitStr(s) =>
             format!("i32.const {}",

@@ -66,7 +66,8 @@ pub enum Expr<'a> {
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
     Assign(Ident<'a>, Expr<'a>),
-    Return(Expr<'a>),
+    Return(SimpleSpan, Expr<'a>),
+    VoidReturn(SimpleSpan),
     Malformed,
 }
 

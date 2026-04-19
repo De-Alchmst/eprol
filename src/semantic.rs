@@ -100,7 +100,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             let val = scope.search(&inner);
 
             if let ScopeItem::None = val {
-                let typ = asttype_to_irtype(typ);
+                let typ = asttype2irtype(typ);
                 let raw_name = raw_name(&inner, source_name);
                 
                 match typ.clone() {
@@ -144,7 +144,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                = top_level
         {
             let raw_name = raw_name(&idnt, source_name);
-            let ret_type = asttype_to_irtype(ret_type.clone());
+            let ret_type = asttype2irtype(ret_type.clone());
 
             if matches!(scope.search(&idnt), ScopeItem::Proc(_, _, _)) {
                 // TODO: handle error of redeclaration
@@ -153,7 +153,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             let mut proc_args: Vec<IRType> = vec![];
             for (typ, names) in args {
                 for _ in names {
-                    proc_args.push(asttype_to_irtype(typ.clone()));
+                    proc_args.push(asttype2irtype(typ.clone()));
                 }
             }
 
@@ -167,7 +167,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                = top_level
         {
             let raw_name = raw_name(&idnt, source_name);
-            let ret_type = asttype_to_irtype(ret_type);
+            let ret_type = asttype2irtype(ret_type);
 
             // will fork scope for local proc
             // will allow shadowing, but `local_set` used to prevent duplicate
@@ -179,7 +179,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
             // register proc args
             for (typ, names) in args {
-                let typ = asttype_to_irtype(typ);
+                let typ = asttype2irtype(typ);
                 for name in names {
                     let raw_arg_name = raw_arg_name(name, &raw_name);
                     if !local_set.contains(&raw_arg_name.clone()) {
@@ -207,14 +207,14 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                             process_const_decl(&mut local_scope, &[], name, expr,
                                                source_name, &source);
                         }
-                    },
+                    }
 
                     // cannot use `process_var_decls`, since it does not allow
                     // shadowing and does not add anything to `local_vars`
                     // and few other things...
                     ProcDeclBlock::Var(vdecls) => {
                         for (typ, vals) in vdecls {
-                            let typ = asttype_to_irtype(typ);
+                            let typ = asttype2irtype(typ);
 
                             for (name, init_expr) in vals {
                                 let idnt = Ident {name, namespace: vec![]};
@@ -255,7 +255,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             // body
             // TODO: handle return somehow
             for stmt in body {
-                body_ir.extend(stmt2ir(&stmt, &local_scope, source_name, &source));
+                body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
+                                       &source, ret_type.clone()));
             }
             
             regular_ir.push(TopLevelIR::Proc(raw_name, proc_args, ret_type, 
@@ -296,7 +297,7 @@ fn process_const_decl<'a>(
     if let ScopeItem::None = val {
         let expr_ir = expr2ir(&expr, &scope, IRType::Any, source_name, source);
         // if expression is literal
-        if let Some(lit_val) = irlist_lit(&expr_ir) {
+        if let Some(lit_val) = irlist_to_lit(&expr_ir) {
             scope.insert(&idnt, ScopeItem::Const(lit_val));
         } else {
             // TODO: handle error on non-literal const value
@@ -307,8 +308,8 @@ fn process_const_decl<'a>(
 }
 
 
-/// Process a variable declaration block
-/// Declares variables in scope and generates global variable IR
+// Process a variable declaration block
+// Declares variables in scope and generates global variable IR
 fn process_var_decls<'a>(
     scope: &mut Scope,
     nmspc: &[&'a str],
@@ -319,7 +320,7 @@ fn process_var_decls<'a>(
 ) {
     // move from here
     for (typ, vals) in decls {
-        let typ = asttype_to_irtype(typ);
+        let typ = asttype2irtype(typ);
 
         for (name, init_expr) in vals {
             let idnt = Ident {name, namespace: nmspc.to_vec()};
@@ -337,7 +338,7 @@ fn process_var_decls<'a>(
                 Some(expr) => {
                     let expr_ir = expr2ir(&expr, &scope, typ.clone(),
                                           source_name, &source);
-                    if let Some(_) = irlist_lit(&expr_ir) {
+                    if let Some(_) = irlist_to_lit(&expr_ir) {
                         expr_ir.last().unwrap().clone()
                     } else {
                         // TODO: handle non-literal var initializer
@@ -364,7 +365,7 @@ impl Scope {
             match current_scope.namespaces.get(ident.namespace[i]) {
                 Some(ns) => {
                     current_scope = &ns;
-                },
+                }
                 None => return ScopeItem::None
             }
         }
@@ -401,7 +402,7 @@ impl Scope {
 }
 
 
-fn irlist_lit(ir: &IRList) -> Option<LitVal> {
+fn irlist_to_lit(ir: &IRList) -> Option<LitVal> {
     match ir.last() {
         Some((_, IR::LitInt(x))) => Some(LitVal::Int(*x)),
         Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
@@ -415,6 +416,7 @@ fn stmt2ir<'a>(
     stmt: &Stmt<'a>, scope: &Scope,
     source_name: &String,
     source: &str,
+    return_expects: IRType,
 ) -> IRList {
     match stmt {
         Stmt::Expr(expr) => {
@@ -423,7 +425,39 @@ fn stmt2ir<'a>(
                 ir.push((IRType::Void, IR::Drop));
             };
             ir
-        },
+        }
+
+        Stmt::VoidReturn(span) => {
+            if return_expects != IRType::Void {
+                report_semantic_error(
+                    span, source_name, source,
+                    "empty return",
+                    format!("Return must be of type {:?}", return_expects)
+                );
+            };
+            vec![(IRType::Void, IR::Return)]
+        }
+
+        Stmt::Return(span, expr) => {
+            if return_expects == IRType::Void {
+                report_semantic_error(
+                    span, source_name, source,
+                    "unexpected return value",
+                    "Return must be empty".to_string()
+                );
+                vec![(IRType::Void, IR::Return)]
+
+            } else {
+                let mut ir = expr2ir(expr, scope, return_expects.clone(),
+                                     source_name, source);
+                let last_ir = ir.pop().unwrap_or((IRType::Error, IR::Error));
+
+                ir.extend(ir_resolve_types(last_ir, return_expects, span,
+                        source_name, source));
+                ir.push((IRType::Void, IR::Return));
+                ir
+            }
+        }
 
         _ => vec![(IRType::Void, IR::Error)] // TODO: handle other statements
     }
@@ -451,7 +485,7 @@ fn expr2ir<'a>(
                     );
                     vec![(IRType::Error, IR::Error)]
                 }
-            },
+            }
 
             Literal::Float(x) => match expects {
                 IRType::Float | IRType::F64 | IRType::Any => vec![(IRType::F64, IR::LitFloat(*x))],
@@ -464,7 +498,7 @@ fn expr2ir<'a>(
                     );
                     vec![(IRType::Error, IR::Error)]
                 }
-            },
+            }
 
             // TODO: handle strings like a normal person
             Literal::Str(s) => {
@@ -482,17 +516,17 @@ fn expr2ir<'a>(
                         vec![(IRType::Error, IR::Error)]
                     }
                 }
-            },
-        },
+            }
+        }
 
         // UNOPS
         Expr::Unop(_span, op, inner) => {
             let mut inner_ir = expr2ir(inner, scope, expects, source_name, source);
             let inner_type   = irlist_type(&inner_ir);
             match op {
-                Unop::Not => inner_ir.extend(vec![(inner_type, IR::Not)]),
+                Unop::Not => inner_ir.push((inner_type, IR::Not)),
                 // TODO: do unop at compiletime with literals
-                Unop::Neg => inner_ir.extend(vec![(inner_type, IR::Neg)]),
+                Unop::Neg => inner_ir.push((inner_type, IR::Neg)),
             }
             inner_ir
         }
@@ -513,7 +547,7 @@ fn expr2ir<'a>(
                     LitVal::Str(s)
                         => expr2ir(&Expr::Lit(PS, Literal::Str(s)), scope,
                                    expects, source_name, source),
-                },
+                }
 
                 // variables -> place and cast if needed
                 ScopeItem::Var(raw_name, var_type, localp) => {
@@ -523,7 +557,7 @@ fn expr2ir<'a>(
                         (var_type.clone(), IR::GlobalGet(raw_name.clone()))
                     };
                     ir_resolve_types(expr, expects, span, source_name, source)
-                },
+                }
 
                 // proc -> funcref not yet implemented -> error
                 ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
@@ -543,7 +577,7 @@ fn expr2ir<'a>(
                         format!("Identifier `{}` not found in scope", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
-                },
+                }
             }
         }
 
@@ -587,7 +621,7 @@ fn expr2ir<'a>(
                 }), expects, span, source_name, source)
             );
             left_ir
-        },
+        }
 
         // PROC CALLS
         Expr::ProcCall(span, idnt, args) => {
@@ -615,7 +649,7 @@ fn expr2ir<'a>(
                     ir.extend(ir_resolve_types((ret_type.clone(), IR::Call(raw_name)),
                                                expects, span, source_name, source));
                     ir
-                },
+                }
 
                 ScopeItem::Const(_) | ScopeItem::Var(_, _, _) => {
                     report_semantic_error(
@@ -624,7 +658,7 @@ fn expr2ir<'a>(
                         format!("Identifier `{}` is not a procedure", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
-                },
+                }
 
                 ScopeItem::None => {
                     report_semantic_error(
@@ -633,9 +667,9 @@ fn expr2ir<'a>(
                         format!("Identifier `{}` not found in scope", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
-                },
+                }
             }
-        },
+        }
 
         // Malformed expressions, errors are already reported by the parser
         Expr::Malformed => vec![(expects, IR::Error)],

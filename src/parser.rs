@@ -248,8 +248,9 @@ where
 
         // RETURN
         just(Token::Return)
-        .ignore_then(expr())
-        .map(|e| Stmt::Return(e)),
+            .ignore_then(expr())
+            .map_with(|exp, e| Stmt::Return(e.span(), exp)),
+        just(Token::Return).map_with(|_, e| Stmt::VoidReturn(e.span())),
 
         // PROC CALL
         // TODO: migrate to dedicated Stmt::ProcCall
@@ -611,7 +612,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_idents() {
+        fn basic_idents() {
         assert_eq!(parse_str_expr("a.b.c + ni"),
         Ok(Expr::Binop(PS, Binop::Add,
                 Box::new(Expr::Ident(PS, Ident { name: "a",  namespace: vec!["b", "c"] })),
@@ -731,7 +732,7 @@ mod tests {
                 ], vec![
                     Stmt::Assign(Ident { name: "foo", namespace: vec![] },
                         Expr::Lit(PS, Literal::Int(3))),
-                    Stmt::Return(Expr::Lit(PS, Literal::Int(7)))
+                    Stmt::Return(PS, Expr::Lit(PS, Literal::Int(7)))
                 ])));
 
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),

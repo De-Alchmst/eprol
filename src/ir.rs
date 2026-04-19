@@ -41,6 +41,7 @@ pub enum IR {
     Not,
     // from
     Cast(IRType),
+    Return,
 }
 
 
@@ -57,7 +58,7 @@ pub type TopLevelIRList = Vec<TopLevelIR>;
 pub type ImportIRList<'a> = Vec<ImportIR<'a>>;
 
 
-pub fn asttype_to_irtype(s: Type) -> IRType {
+pub fn asttype2irtype(s: Type) -> IRType {
     match s {
         Type::I32  => IRType::I32,
         Type::I64  => IRType::I64,
@@ -65,8 +66,8 @@ pub fn asttype_to_irtype(s: Type) -> IRType {
         Type::F64  => IRType::F64,
         Type::Void => IRType::Void,
         Type::Proc(args, ret) =>
-            IRType::Func(args.into_iter().map(asttype_to_irtype).collect(),
-                         Box::new(asttype_to_irtype(*ret))),
+            IRType::Func(args.into_iter().map(asttype2irtype).collect(),
+                         Box::new(asttype2irtype(*ret))),
     }
 }
 
@@ -122,15 +123,15 @@ pub fn ir_resolve_types(
     source_name: &String,
     source: &str,
 ) -> IRList {
+    let current = got.0.clone();
     let report_error = || {
         report_semantic_error(
             span, source_name, source,
             "Incompatible types",
-            format!("Expected {:?} found {:?}", got.0, expected)
+            format!("Expected {:?} found {:?}", expected, current)
         )
     };
-    
-    let current = got.0.clone();
+
     match expected {
         IRType::I32 => match current {
             IRType::I32 | IRType::Int | IRType::Any => vec![got],
