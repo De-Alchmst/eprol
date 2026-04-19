@@ -444,14 +444,19 @@ fn stmt2ir<'a>(
             } else {
                 let mut ir = expr2ir(expr, scope, return_expects.clone(),
                                      source_name, source);
-                let last_ir = ir.pop().unwrap_or((IRType::Error, IR::Error));
-
-                ir.extend(ir_resolve_types(last_ir, return_expects, span,
-                        source_name, source));
                 ir.push((IRType::Void, IR::Return));
                 ir
             }
         }
+
+        // Stmt::Assign(left, right) => {
+        //     let (left_ir, left_type) = left_value2ir(left, scope, source_name,
+        //                                              source);
+        //     let mut right_ir = expr2ir(right, scope, left_type.clone(),
+        //                                source_name, source);
+        //     right_ir.extend(left_ir);
+        //     right_ir
+        // }
 
         _ => vec![(IRType::Void, IR::Error)] // TODO: handle other statements
     }

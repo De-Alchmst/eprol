@@ -24,6 +24,7 @@ END
 PROC foo : I32
 I32 bar := 2
 DO
-  RETURN bar + 42
+  RETURN bar + 42;
+  RETURN 57
 END
-PROC baz DO RETURN; END
+PROC baz DO RETURN END
