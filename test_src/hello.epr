@@ -13,11 +13,10 @@ DO END
 
 PROC update
 EXPORT "update"
-I32 hx := 10, hy := 10 ##$ C,
-    wx := 20, wy := 40,
+I32 hx := 10, hy := 10,
+    wx := 20, wy := 40.8,
 DO
-  dfdsf dstextU
   textUtf8(hello, helloLen, hx, hy);
-  textUtf8(world, worldLen, wx, wy #$$ C);
-  hx := hx + 1 FOO
+  textUtf8(world, worldLen, wx, wy);
+  hx := hx + 1
 END

@@ -30,3 +30,25 @@ pub fn report_parser_error<'a>(
         .print(sources([(source_name.clone(), source)]))
         .unwrap();
 }
+
+
+pub fn report_semantic_error<'a>(
+    span: &'a SimpleSpan,
+    source_name: &'a String,
+    source: &'a str,
+    error_title: &'a str,
+    error_message: String,
+){
+    Report::build(ReportKind::Error, (source_name.clone(), span.into_range()))
+        .with_config(ariadne::Config::new()
+                        .with_index_type(ariadne::IndexType::Byte))
+        .with_message(error_title)
+        .with_label(
+            Label::new((source_name.clone(), span.into_range()))
+                .with_message(error_message)
+                .with_color(Color::Red),
+        )
+        .finish()
+        .print(sources([(source_name.clone(), source)]))
+        .unwrap();
+}

@@ -2,6 +2,7 @@ use crate::{
     ast::*,
     ir::*,
     parser::parse_str_program,
+    errors::report_semantic_error,
     name_encoding::{
         raw_name,
         raw_arg_name,
@@ -47,6 +48,9 @@ fn get_data_set<'a>() -> &'static Mutex<HashSet<String>> {
 // flag to signal whether compilation finished successfully or not
 // don't join files if errors found
 pub static mut FOUND_ERRORS: bool = false;
+
+
+
 pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let source = read_to_string(source_name).expect("Failed to read source file");
     let ast = parse_str_program(&source, source_name, &source);
@@ -79,7 +83,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
                 for (name, expr) in decls {
-                    process_const_decl(&mut scope, &nmspc, name, expr);
+                    process_const_decl(&mut scope, &nmspc, name, expr,
+                                       source_name, &source);
                 }
             }
         }
@@ -121,7 +126,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // VARS
     for top_level in vars_to_process {
         if let TopLevel::VarDecl(nmspc, decls) = top_level {
-            process_var_decls(&mut scope, &nmspc, decls, &mut regular_ir, source_name);
+            process_var_decls(&mut scope, &nmspc, decls, &mut regular_ir,
+                              source_name, &source);
         }
     }
 
@@ -195,7 +201,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                     ProcDeclBlock::Const(cdecls) => {
                         for (name, expr) in cdecls {
                             local_set.insert(raw_arg_name(name, &raw_name));
-                            process_const_decl(&mut local_scope, &[], name, expr);
+                            process_const_decl(&mut local_scope, &[], name, expr,
+                                               source_name, &source);
                         }
                     },
 
@@ -221,7 +228,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                                 let init_ir = match init_expr {
                                     None => vec![default_irtype_val(&typ)],
                                     Some(expr)
-                                        => expr2ir(&expr, &local_scope, typ.clone())
+                                        => expr2ir(&expr, &local_scope, typ.clone(),
+                                                   source_name, &source),
                                 };
 
                                 local_scope.insert(&idnt,
@@ -244,7 +252,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             // body
             // TODO: handle return somehow
             for stmt in body {
-                body_ir.extend(stmt2ir(&stmt, &local_scope));
+                body_ir.extend(stmt2ir(&stmt, &local_scope, source_name, &source));
             }
             
             regular_ir.push(TopLevelIR::Proc(raw_name, proc_args, ret_type, 
@@ -274,13 +282,15 @@ fn process_const_decl<'a>(
     scope: &mut Scope,
     nmspc: &[&'a str],
     name: &'a str,
-    expr: Expr<'a>
+    expr: Expr<'a>,
+    source_name: &String,
+    source: &str,
 ) {
     let idnt = Ident {name, namespace: nmspc.to_vec()};
     let val = scope.search(&idnt);
 
     if let ScopeItem::None = val {
-        let expr_ir = expr2ir(&expr, &scope, IRType::Any);
+        let expr_ir = expr2ir(&expr, &scope, IRType::Any, source_name, source);
         // if expression is literal
         if let Some(lit_val) = irlist_lit(&expr_ir) {
             scope.insert(&idnt, ScopeItem::Const(lit_val));
@@ -300,7 +310,8 @@ fn process_var_decls<'a>(
     nmspc: &[&'a str],
     decls: Vec<VarDeclBlock<'a>>,
     regular_ir: &mut TopLevelIRList,
-    source_name: &str
+    source_name: &String,
+    source: &str,
 ) {
     // move from here
     for (typ, vals) in decls {
@@ -320,7 +331,8 @@ fn process_var_decls<'a>(
             let init_ir = match init_expr {
                 None => default_irtype_val(&typ),
                 Some(expr) => {
-                    let expr_ir = expr2ir(&expr, &scope, typ.clone());
+                    let expr_ir = expr2ir(&expr, &scope, typ.clone(),
+                                          source_name, &source);
                     if let Some(_) = irlist_lit(&expr_ir) {
                         expr_ir.last().unwrap().clone()
                     } else {
@@ -395,10 +407,14 @@ fn irlist_lit(ir: &IRList) -> Option<LitVal> {
 }
 
 
-fn stmt2ir<'a>(stmt: &Stmt<'a>, scope: &Scope) -> IRList {
+fn stmt2ir<'a>(
+    stmt: &Stmt<'a>, scope: &Scope,
+    source_name: &String,
+    source: &str,
+) -> IRList {
     match stmt {
         Stmt::Expr(expr) => {
-            let mut ir = expr2ir(expr, scope, IRType::Any);
+            let mut ir = expr2ir(expr, scope, IRType::Any, source_name, source);
             if !ir.last().is_some_and(|(t, _)| matches!(t, IRType::Void)) {
                 ir.push((IRType::Void, IR::Drop));
             };
@@ -410,22 +426,46 @@ fn stmt2ir<'a>(stmt: &Stmt<'a>, scope: &Scope) -> IRList {
 }
 
 
-fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
+fn expr2ir<'a>(
+    expr: &Expr<'a>, scope: &Scope, expects: IRType,
+    source_name: &String,
+    source: &str,
+) -> IRList {
     match expr {
         // LITERALS
-        Expr::Lit(_span, lit) => match lit {
+        Expr::Lit(span, lit) => match lit {
             Literal::Int(x) => match expects {
                 IRType::Int | IRType::I64 | IRType::Any => vec![(IRType::I64, IR::LitInt(*x))],
                 IRType::I32 => vec![(IRType::I32, IR::LitInt(*x))],
                 IRType::Float | IRType::F64 => vec![(IRType::F64, IR::LitFloat(*x as f64))],
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x as f64))],
-                _ => vec![(IRType::Error, IR::Error)]
+                _ => {
+                    report_semantic_error(
+                        span,
+                        source_name,
+                        source,
+                        "Incompatible types",
+                        format!("Expected {:?}, found Int", expects)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
             },
+
             Literal::Float(x) => match expects {
                 IRType::Float | IRType::F64 | IRType::Any => vec![(IRType::F64, IR::LitFloat(*x))],
                 IRType::F32 => vec![(IRType::F32, IR::LitFloat(*x))],
-                _ => vec![(IRType::Error, IR::Error)]
+                _ => {
+                    report_semantic_error(
+                        span,
+                        source_name,
+                        source,
+                        "Incompatible types",
+                        format!("Expected {:?}, found Float", expects)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
             },
+
             // TODO: handle strings like a normal person
             Literal::Str(s) => {
                 let s = s.to_string();
@@ -433,14 +473,23 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                 match expects {
                     IRType::Int | IRType::I32 | IRType::Any => vec![(IRType::I32, IR::LitStr(s.to_string()))],
                     IRType::I64 => vec![(IRType::I64, IR::LitStr(s))],
-                    _ => vec![(IRType::Error, IR::Error)]
+                    _ => {
+                        report_semantic_error(
+                            span,
+                            source_name,
+                            source,
+                            "Incompatible types",
+                            format!("Expected {:?}, found Int", expects)
+                        );
+                        vec![(IRType::Error, IR::Error)]
+                    }
                 }
             },
         },
 
         // UNOPS
         Expr::Unop(_span, op, inner) => {
-            let mut inner_ir = expr2ir(inner, scope, expects);
+            let mut inner_ir = expr2ir(inner, scope, expects, source_name, source);
             let inner_type   = irlist_type(&inner_ir);
             match op {
                 Unop::Not => inner_ir.extend(vec![(inner_type, IR::Not)]),
@@ -457,12 +506,15 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                 // constants -> place as literals
                 ScopeItem::Const(lit_val) => match lit_val {
                     LitVal::Int(x)
-                        => expr2ir(&Expr::Lit(PS, Literal::Int(*x)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Int(*x)), scope,
+                                   expects, source_name, source),
                     LitVal::Float(x)
-                        => expr2ir(&Expr::Lit(PS, Literal::Float(*x)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Float(*x)), scope,
+                                   expects, source_name, source),
                     // String constants not supported yet - would need owned strings in IR
                     LitVal::Str(s)
-                        => expr2ir(&Expr::Lit(PS, Literal::Str(s)), scope, expects),
+                        => expr2ir(&Expr::Lit(PS, Literal::Str(s)), scope,
+                                   expects, source_name, source),
                 },
 
                 // variables -> place and cast if needed
@@ -490,9 +542,11 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
         // TODO:: add unsigned support for binops
         Expr::Binop(_span, op, left, right) => {
             // evaluate both sides
-            let mut left_ir = expr2ir(left, scope, expects.clone());
+            let mut left_ir = expr2ir(left, scope, expects.clone(),
+                                      source_name, source);
             let left_type = irlist_type(&left_ir);
-            let mut right_ir = expr2ir(right, scope, left_type.clone());
+            let mut right_ir = expr2ir(right, scope, left_type.clone(),
+                                       source_name, source);
             let right_type = irlist_type(&right_ir);
 
             // fix right type if needed
@@ -527,7 +581,8 @@ fn expr2ir<'a>(expr: &Expr<'a>, scope: &Scope, expects: IRType) -> IRList {
                     // evaluate args to their required types
                     let mut ir = vec![];
                     for i in 0..args.len() {
-                        let arg_ir = expr2ir(&args[i], scope, arg_types[i].clone());
+                        let arg_ir = expr2ir(&args[i], scope, arg_types[i].clone(),
+                                             source_name, source);
                         ir.extend(arg_ir);
                     }
                     ir.extend(ir_resolve_types((ret_type.clone(),
@@ -585,7 +640,7 @@ mod tests {
             expr2ir(
                 &Expr::Unop(PS, Unop::Neg, Box::new(
                         Expr::Ident(PS, Ident {name: "w", namespace: vec!["n"]}))),
-                get_test_scope(), IRType::F32),
+                get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
                 (IRType::F32, IR::LitFloat(3.7)),
                 (IRType::F32, IR::Neg)
@@ -597,7 +652,7 @@ mod tests {
             expr2ir(
                 &Expr::Unop(PS, Unop::Neg, Box::new(
                         Expr::Ident(PS, Ident {name: "nonexistetn", namespace: vec!["n"]}))),
-                get_test_scope(), IRType::F32),
+                get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
                 (IRType::Error, IR::Error),
                 (IRType::Error, IR::Neg)
@@ -614,7 +669,7 @@ mod tests {
                     Box::new(Expr::Binop(PS, Binop::Mul,
                         Box::new(Expr::Lit(PS, Literal::Int(5))),
                         Box::new(Expr::Lit(PS, Literal::Int(9)))))),
-                get_test_scope(), IRType::I64),
+                get_test_scope(), IRType::I64, &String::new(), ""),
             vec![
                 (IRType::I32, IR::GlobalGet("raw_x".to_string())),
                 (IRType::I64, IR::Cast(IRType::I32)),
@@ -634,7 +689,7 @@ mod tests {
                     Expr::Lit(PS, Literal::Int(5)),
                     Expr::Lit(PS, Literal::Float(3.7)),
                 ]),
-                get_test_scope(), IRType::F32),
+                get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
                 (IRType::I32, IR::LitInt(5)),
                 (IRType::F64, IR::LitFloat(3.7)),
