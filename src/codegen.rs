@@ -137,6 +137,47 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
             format!("i32.const {}",
                     get_data_info().lock().unwrap().get(s).unwrap_or(&0)),
 
-        _ => format!("[[[{}, {:#?}]]]", typ, val)
+        IR::Cast(source_type) =>
+            match source_type {
+                IRType::I32 => {
+                    match typ {
+                        IRType::I64 => "i64.extend_i32_s",
+                        IRType::F32 => "f32.convert_i32_s",
+                        IRType::F64 => "f64.convert_i32_s",
+                        _ => unimplemented!()
+                    }
+                }
+
+                IRType::I64 => {
+                    match typ {
+                        IRType::I32 => "i32.wrap_i64",
+                        IRType::F32 => "f32.convert_i64_s",
+                        IRType::F64 => "f64.convert_i64_s",
+                        _ => unimplemented!()
+                    }
+                }
+
+                IRType::F32 => {
+                    match typ {
+                        IRType::I32 => "i32.trunc_f32_s",
+                        IRType::I64 => "i64.trunc_f32_s",
+                        IRType::F64 => "f64.promote_f32",
+                        _ => unimplemented!()
+                    }
+                }
+
+                IRType::F64 => {
+                    match typ {
+                        IRType::I32 => "i32.trunc_f64_s",
+                        IRType::I64 => "i64.trunc_f64_s",
+                        IRType::F32 => "f32.demote_f64",
+                        _ => unimplemented!()
+                    }
+                }
+
+                _ => unimplemented!()
+            }.to_string(),
+
+        _ => unimplemented!()
     }
 }
