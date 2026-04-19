@@ -192,14 +192,14 @@ where
 
         // TODO: handle types as garbage terminators...
         let expr_garbage =
-         none_of([
-             Token::Semicolon, Token::End, Token::Comma, Token::Do,
-             Token::To, Token::Downto, Token::Until, Token::Step,
-             Token::LRound, Token::RRound, Token::Const, Token::Var,
-             Token::Static
-         ])
-        .repeated()
-        .at_least(1);
+            none_of([
+                Token::Semicolon, Token::End, Token::Comma, Token::Do,
+                Token::To, Token::Downto, Token::Until, Token::Step,
+                Token::LRound, Token::RRound, Token::Const, Token::Var,
+                Token::Static
+            ])
+            .repeated()
+            .at_least(1);
 
         // Malform expression
         // might start with matching a valid expression
@@ -207,29 +207,73 @@ where
         // as a whole
         choice((
             // valid expression with trailing garbage
-            binop_sum.clone().ignore_then(
-                expr_garbage.clone()
-            )
-            .validate(|_, e, emitter| {
-                emitter.emit(Rich::custom(
-                    e.span(),
-                    "Malformed expression"));
-                Expr::Malformed
-            }),
+            binop_sum.clone()
+                .ignore_then(expr_garbage.clone())
+                .validate(|_, e, emitter| {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        "Malformed expression"));
+                    Expr::Malformed
+                }),
 
             // valid expression
             binop_sum,
 
             // leading garbage
             expr_garbage
+                .validate(|_, e, emitter| {
+                    emitter.emit(Rich::custom(
+                        e.span(),
+                        "Malformed expression"));
+                    Expr::Malformed
+                }),
+        ))
+    })
+}
+
+
+fn bare_left_value<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, LeftValue<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    ident().map_with(|i, e| LeftValue::Ident(e.span(), i))
+}
+
+
+fn left_value<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, LeftValue<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    let garbage = none_of([Token::Assign, Token::Semicolon, Token::End])
+        .repeated()
+        .at_least(1);
+
+    // see expr()
+    choice((
+        // valid expression with trailing garbage
+        bare_left_value()
+            .ignore_then(garbage.clone())
+            .validate(|_, e, emitter| {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    "Malformed left value"));
+                LeftValue::Malformed
+            }),
+
+        // valid expression
+        bare_left_value(),
+
+        // leading garbage
+        garbage
             .validate(|_, e, emitter| {
                 emitter.emit(Rich::custom(
                     e.span(),
                     "Malformed expression"));
-                Expr::Malformed
+                LeftValue::Malformed
             }),
-        ))
-    })
+    ))
 }
 
 
@@ -240,11 +284,11 @@ where
 {
     choice((
         // ASSIGN
-        ident()
+        left_value()
             .then_ignore(just(Token::Assign))
             .then(expr())
-            .map(|(idnt, exp)|
-                Stmt::Assign(idnt, exp)),
+            .map(|(lv, exp)|
+                Stmt::Assign(lv, exp)),
 
         // RETURN
         just(Token::Return)

@@ -84,11 +84,11 @@ impl fmt::Display for IRType  {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IRType::Int => write!(f, "int"),
-            IRType::I32 => write!(f, "I32"),
-            IRType::I64 => write!(f, "I64"),
+            IRType::I32 => write!(f, "i32"),
+            IRType::I64 => write!(f, "i64"),
             IRType::Float => write!(f, "float"),
-            IRType::F32 => write!(f, "F32"),
-            IRType::F64 => write!(f, "F64"),
+            IRType::F32 => write!(f, "f32"),
+            IRType::F64 => write!(f, "f64"),
             IRType::Func(args, ret) => {
                 let args_str = args.iter().map(|t|
                     t.to_string()).collect::<Vec<_>>().join(", ");

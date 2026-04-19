@@ -63,9 +63,15 @@ pub enum Expr<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum LeftValue<'a> {
+    Ident(SimpleSpan, Ident<'a>),
+    Malformed
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
-    Assign(Ident<'a>, Expr<'a>),
+    Assign(LeftValue<'a>, Expr<'a>),
     Return(SimpleSpan, Expr<'a>),
     VoidReturn(SimpleSpan),
     Malformed,

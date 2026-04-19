@@ -253,7 +253,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             }
             
             // body
-            // TODO: handle return somehow
+            // TODO: check return somehow
             for stmt in body {
                 body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
                                        &source, ret_type.clone()));
@@ -377,7 +377,7 @@ impl Scope {
     }
 
 
-    fn insert(&mut self, ident: &Ident, item: ScopeItem) -> bool {
+    fn insert(&mut self, ident: &Ident, item: ScopeItem) {
         let mut current_scope = self;
 
         // step through namespaces to find required scope, create if not found
@@ -391,13 +391,7 @@ impl Scope {
             current_scope = current_scope.namespaces.get_mut(ident.namespace[i])
                                                     .unwrap();
         }
-
-        if current_scope.contents.contains_key(ident.name) {
-            return false;
-        } else {
-            current_scope.contents.insert(ident.name.to_string(), item);
-            true
-        }
+        current_scope.contents.insert(ident.name.to_string(), item);
     }
 }
 
@@ -591,7 +585,9 @@ fn expr2ir<'a>(
             // evaluate both sides
             let mut left_ir = expr2ir(left, scope, expects.clone(),
                                       source_name, source);
-            let left_type = irlist_type(&left_ir);
+            let mut left_type = irlist_type(&left_ir);
+            if left_type == IRType::Error { left_type = expects.clone(); }
+
             let mut right_ir = expr2ir(right, scope, left_type.clone(),
                                        source_name, source);
             let right_type = irlist_type(&right_ir);

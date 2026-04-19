@@ -21,5 +21,9 @@ DO
   textUtf8(world, worldLen, wx, wy);
 END
 
-PROC foo : I32 DO RETURN 42; END
+PROC foo : I32
+I32 bar := 2
+DO
+  RETURN bar + 42
+END
 PROC baz DO RETURN; END
