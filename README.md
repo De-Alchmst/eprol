@@ -1,4 +1,4 @@
-## Education & PROcrastination Language
+# Education & PROcrastination Language
 
 A very simple, minimal, low-level WASM language.
 Think of it as a bare-bones ALGOL-like syntactical abstraction over WAT with
