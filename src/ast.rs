@@ -77,8 +77,8 @@ pub enum Stmt<'a> {
     Malformed,
 }
 
-pub type VarDeclBlock<'a> = (Type, Vec<(&'a str, Option<Expr<'a>>)>);
-pub type ConstDeclBlock<'a> = Vec<(&'a str, Expr<'a>)>;
+pub type VarDeclBlock<'a> = (Type, Vec<(SimpleSpan, &'a str, Option<Expr<'a>>)>);
+pub type ConstDeclBlock<'a> = Vec<(SimpleSpan, &'a str, Expr<'a>)>;
 
 // type, args
 pub type ProcArgs<'a> = (Type, Vec<&'a str>);
@@ -95,7 +95,19 @@ pub enum TopLevel<'a> {
     // name, args, return type, export name, decls, body
     ProcDecl(Ident<'a>, Vec<ProcArgs<'a>>, Type, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
     // outer name, inner name, type
-    Import(Vec<&'a str>, Ident<'a>, Type),
+    Import(SimpleSpan, Vec<&'a str>, Ident<'a>, Type),
 }
 
 pub type Program<'a> = Vec<TopLevel<'a>>;
+
+
+pub fn expr2span(expr: &Expr) -> SimpleSpan {
+    match expr {
+        Expr::Lit(span, _) | 
+        Expr::Unop(span, _, _) |
+        Expr::Binop(span, _, _, _) |
+        Expr::Ident(span, _) |
+        Expr::ProcCall(span, _, _) => *span,
+        Expr::Malformed => PS,
+    }
+}

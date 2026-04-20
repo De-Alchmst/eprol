@@ -38,7 +38,7 @@ pub fn parse_str_expr(input: &str) -> Result<Expr<'_>, Vec<Rich<'_, Token<'_>, S
 
 pub fn parse_str_stmt(input: &str) -> Result<Stmt<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
     let token_iter = Token::lexer(input)
-        .spanned() .map(|(tok, span)| match tok {
+        .spanned().map(|(tok, span)| match tok {
             Ok(tok) => (tok, span.into()),
             Err(()) => (Token::Error, span.into()),
         });
@@ -50,7 +50,7 @@ pub fn parse_str_stmt(input: &str) -> Result<Stmt<'_>, Vec<Rich<'_, Token<'_>, S
 
 pub fn parse_str_top_level(input: &str) -> Result<TopLevel<'_>, Vec<Rich<'_, Token<'_>, SimpleSpan<usize, ()>>>>   {
     let token_iter = Token::lexer(input)
-        .spanned() .map(|(tok, span)| match tok {
+        .spanned().map(|(tok, span)| match tok {
             Ok(tok) => (tok, span.into()),
             Err(()) => (Token::Error, span.into()),
         });
@@ -64,7 +64,7 @@ pub fn parse_str_program<'a>(
     input: &'a str, source_name: &'a String, source: &'a str
 ) -> Program<'a> {
     let token_iter = Token::lexer(input)
-        .spanned() .map(|(tok, span)| match tok {
+        .spanned().map(|(tok, span)| match tok {
             Ok(tok) => (tok, span.into()),
             Err(()) => (Token::Error, span.into()),
         });
@@ -211,7 +211,7 @@ where
                 .ignore_then(expr_garbage.clone())
                 .validate(|_, e, emitter| {
                     emitter.emit(Rich::custom(
-                        e.span(),
+                        if !cfg!(test) {e.span()} else {PS},
                         "Malformed expression"));
                     Expr::Malformed
                 }),
@@ -223,7 +223,7 @@ where
             expr_garbage
                 .validate(|_, e, emitter| {
                     emitter.emit(Rich::custom(
-                        e.span(),
+                        if !cfg!(test) {e.span()} else {PS},
                         "Malformed expression"));
                     Expr::Malformed
                 }),
@@ -237,7 +237,8 @@ fn bare_left_value<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    ident().map_with(|i, e| LeftValue::Ident(e.span(), i))
+    ident().map_with(|i, e|
+        LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i))
 }
 
 
@@ -257,7 +258,7 @@ where
             .ignore_then(garbage.clone())
             .validate(|_, e, emitter| {
                 emitter.emit(Rich::custom(
-                    e.span(),
+                    if !cfg!(test) {e.span()} else {PS},
                     "Malformed left value"));
                 LeftValue::Malformed
             }),
@@ -269,7 +270,7 @@ where
         garbage
             .validate(|_, e, emitter| {
                 emitter.emit(Rich::custom(
-                    e.span(),
+                    if !cfg!(test) {e.span()} else {PS},
                     "Malformed expression"));
                 LeftValue::Malformed
             }),
@@ -293,8 +294,10 @@ where
         // RETURN
         just(Token::Return)
             .ignore_then(expr())
-            .map_with(|exp, e| Stmt::Return(e.span(), exp)),
-        just(Token::Return).map_with(|_, e| Stmt::VoidReturn(e.span())),
+            .map_with(|exp, e|
+                Stmt::Return(if !cfg!(test) {e.span()} else {PS}, exp)),
+        just(Token::Return).map_with(|_, e|
+            Stmt::VoidReturn(if !cfg!(test) {e.span()} else {PS})),
 
         // PROC CALL
         // TODO: migrate to dedicated Stmt::ProcCall
@@ -329,7 +332,7 @@ where
         )
         .validate(|_, e, emitter| {
             emitter.emit(Rich::custom(
-                e.span(),
+                if !cfg!(test) {e.span()} else {PS},
                 "Malformed statement"));
             Stmt::Malformed
         }),
@@ -458,8 +461,14 @@ where
                 select!{ Token::Ident(s) => s }
                     .then_ignore(just(Token::Assign))
                     .then(expr())
-                    .map(|(i, exp)| (i, Some(exp))),
-                select!{ Token::Ident(s) => (s, None) }
+                    .map_with(|(i, exp), e|
+                        (if !cfg!(test) {e.span()} else {PS},
+                         i, Some(exp))),
+
+                select!{ Token::Ident(s) => s }
+                    .map_with(|s, e|
+                        (if !cfg!(test) {e.span()} else {PS},
+                         s, None))
             ))
             .separated_by(just(Token::Comma))
             .allow_trailing()
@@ -482,6 +491,8 @@ where
     select!{ Token::Ident(s) => s }
         .then_ignore(just(Token::Equal))
         .then(expr())
+        .map_with(|(i, exp), e|
+            (if !cfg!(test) {e.span()} else {PS}, i, exp))
         .separated_by(just(Token::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
@@ -567,8 +578,10 @@ where
             .then_ignore(just(Token::As))
             .then(name_optional_namespace_declare())
             .then(import_type())
-            .map(|((strings, ident), typ)|
-                TopLevel::Import(strings, ident, typ)),
+            .map_with(|((strings, ident), typ), e|
+                TopLevel::Import(
+                    if !cfg!(test) {e.span()} else {PS},
+                    strings, ident, typ)),
 
         // VAR
         just(Token::Var)
@@ -666,7 +679,7 @@ mod tests {
     #[test]
     fn assignment() {
         assert_eq!(parse_str_stmt("foo := 1-2"),
-        Ok(Stmt::Assign(Ident {name: "foo", namespace: vec![]},
+        Ok(Stmt::Assign(LeftValue::Ident(PS, Ident {name: "foo", namespace: vec![]}),
                 Expr::Binop(PS, Binop::Sub,
                     Box::new(Expr::Lit(PS, Literal::Int(1))),
                     Box::new(Expr::Lit(PS, Literal::Int(2)))))))
@@ -683,13 +696,13 @@ mod tests {
     #[test]
     fn import() {
         assert_eq!(parse_str_top_level("IMPORT \"foo\" \"bar\" AS a : b I32"),
-        Ok(TopLevel::Import(vec!["foo", "bar"],
+        Ok(TopLevel::Import(PS, vec!["foo", "bar"],
                             Ident { name: "a", namespace: vec!["b"] },
                             Type::I32)));
 
         assert_eq!(parse_str_top_level(
                 "IMPORT \"foo\" AS foo (I32 a, b, F32 c): I32"),
-            Ok(TopLevel::Import(vec!["foo"],
+            Ok(TopLevel::Import(PS, vec!["foo"],
                                 Ident { name: "foo", namespace: vec![] },
                                 Type::Proc(vec![Type::I32, Type::I32, Type::F32],
                                            Box::new(Type::I32)))));
@@ -704,17 +717,17 @@ mod tests {
         Ok(TopLevel::VarDecl(vec!["V"],
                 vec![
                     (Type::I32, vec![
-                        ("foo", None),
-                        ("bar", Some(Expr::Lit(PS, Literal::Int(3)))),
-                        ("baz", None),
+                        (PS, "foo", None),
+                        (PS, "bar", Some(Expr::Lit(PS, Literal::Int(3)))),
+                        (PS, "baz", None),
                     ])
                 ])));
 
         assert_eq!(parse_str_top_level("VAR I32 foo, I64 bar := 7 END"),
         Ok(TopLevel::VarDecl(vec![],
                 vec![
-                    (Type::I32, vec![("foo", None)]),
-                    (Type::I64, vec![("bar", Some(Expr::Lit(PS, Literal::Int(7))))]),
+                    (Type::I32, vec![(PS, "foo", None)]),
+                    (Type::I64, vec![(PS, "bar", Some(Expr::Lit(PS, Literal::Int(7))))]),
                 ])));
     }
 
@@ -726,8 +739,8 @@ mod tests {
         assert_eq!(parse_str_top_level("CONST : re.ee foo = 3, bar = 7, END"),
         Ok(TopLevel::ConstDecl(vec!["re", "ee"],
                 vec![
-                    ("foo", Expr::Lit(PS, Literal::Int(3))),
-                    ("bar", Expr::Lit(PS, Literal::Int(7))),
+                    (PS, "foo", Expr::Lit(PS, Literal::Int(3))),
+                    (PS, "bar", Expr::Lit(PS, Literal::Int(7))),
                 ])));
     }
 
@@ -765,16 +778,17 @@ mod tests {
                 Type::I32, Some("exp"),
                 vec![
                     ProcDeclBlock::Var(vec![
-                        (Type::I32, vec![("foo", None)]),
+                        (Type::I32, vec![(PS, "foo", None)]),
                     ]),
                     ProcDeclBlock::Const(vec![
-                        ("bar", Expr::Lit(PS, Literal::Int(1)))
+                        (PS, "bar", Expr::Lit(PS, Literal::Int(1)))
                     ]),
                     ProcDeclBlock::Var(vec![
-                        (Type::I64, vec![("baz", None)]),
+                        (Type::I64, vec![(PS, "baz", None)]),
                     ]),
                 ], vec![
-                    Stmt::Assign(Ident { name: "foo", namespace: vec![] },
+                    Stmt::Assign(LeftValue::Ident(PS,
+                                     Ident { name: "foo", namespace: vec![] }),
                         Expr::Lit(PS, Literal::Int(3))),
                     Stmt::Return(PS, Expr::Lit(PS, Literal::Int(7)))
                 ])));
@@ -782,7 +796,8 @@ mod tests {
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
         Ok(TopLevel::ProcDecl(Ident {name: "foo", namespace: vec![]},
                 vec![], Type::Void, None, vec![], vec![
-                    Stmt::Assign(Ident { name: "i", namespace: vec![] },
+                    Stmt::Assign(LeftValue::Ident(PS,
+                                     Ident { name: "i", namespace: vec![] }),
                         Expr::Lit(PS, Literal::Int(1)))
                 ])))
     }

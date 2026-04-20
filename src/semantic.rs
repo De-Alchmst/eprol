@@ -17,6 +17,7 @@ use std::{
     sync::{Mutex, OnceLock},
     fs::read_to_string
 };
+use chumsky::span::SimpleSpan;
 
 // types used for Scope representation
 #[derive(Clone, Debug)]
@@ -81,12 +82,12 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // and fill other lists for later processing
     for top_level in ast {
         match top_level {
-            TopLevel::Import(_, _, _) => imports_to_process.push(top_level),
+            TopLevel::Import(_, _, _, _) => imports_to_process.push(top_level),
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
-                for (name, expr) in decls {
-                    process_const_decl(&mut scope, &nmspc, name, expr,
+                for (span, name, expr) in decls {
+                    process_const_decl(&mut scope, &nmspc, span, name, expr,
                                        source_name, &source);
                 }
             }
@@ -96,7 +97,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
     // IMPORTS
     for top_level in imports_to_process {
-        if let TopLevel::Import(outer, inner, typ) = top_level {
+        if let TopLevel::Import(span, outer, inner, typ) = top_level {
             let val = scope.search(&inner);
 
             if let ScopeItem::None = val {
@@ -120,7 +121,11 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
                 import_ir.push((outer, raw_name, typ));
             } else {
-                // TODO: handle error of redeclaration
+                report_semantic_error(
+                    &span, source_name, &source,
+                    "Identifier redeclaration",
+                    format!("Identifier `{}` is already declared in scope", inner.name)
+                );
             }
         }
     }
@@ -202,10 +207,10 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             for decl in decls {
                 match decl {
                     ProcDeclBlock::Const(cdecls) => {
-                        for (name, expr) in cdecls {
+                        for (span, name, expr) in cdecls {
                             local_set.insert(raw_arg_name(name, &raw_name));
-                            process_const_decl(&mut local_scope, &[], name, expr,
-                                               source_name, &source);
+                            process_const_decl(&mut local_scope, &[], span, name,
+                                               expr, source_name, &source);
                         }
                     }
 
@@ -216,13 +221,17 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                         for (typ, vals) in vdecls {
                             let typ = asttype2irtype(typ);
 
-                            for (name, init_expr) in vals {
+                            for (span, name, init_expr) in vals {
                                 let idnt = Ident {name, namespace: vec![]};
                                 let raw_name = raw_arg_name(name, &raw_name);
 
                                 // already in local scope
                                 if local_set.contains(&raw_name.clone()) {
-                                    // TODO: handle error of redeclaration
+                                    report_semantic_error(
+                                        &span, source_name, &source,
+                                        "Identifier redeclaration",
+                                        format!("Identifier `{}` is already declared in scope", name)
+                                    );
                                     continue;
                                 }
 
@@ -253,7 +262,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             }
             
             // body
-            // TODO: check return somehow
+            // TODO: check if all paths return a value
             for stmt in body {
                 body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
                                        &source, ret_type.clone()));
@@ -286,6 +295,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 fn process_const_decl<'a>(
     scope: &mut Scope,
     nmspc: &[&'a str],
+    span: SimpleSpan,
     name: &'a str,
     expr: Expr<'a>,
     source_name: &String,
@@ -303,7 +313,11 @@ fn process_const_decl<'a>(
             // TODO: handle error on non-literal const value
         }
     } else {
-        // TODO: handle error of redeclaration
+        report_semantic_error(
+            &span, source_name, &source,
+            "Identifier redeclaration",
+            format!("Identifier `{}` is already declared in scope", name)
+        );
     }
 }
 
@@ -322,13 +336,17 @@ fn process_var_decls<'a>(
     for (typ, vals) in decls {
         let typ = asttype2irtype(typ);
 
-        for (name, init_expr) in vals {
+        for (span, name, init_expr) in vals {
             let idnt = Ident {name, namespace: nmspc.to_vec()};
             let raw_name = raw_name(&idnt, source_name);
 
             // Already in scope
             if !matches!(scope.search(&idnt), ScopeItem::None) {
-                // TODO: handle error of redeclaration
+                report_semantic_error(
+                    &span, source_name, &source,
+                    "Identifier redeclaration",
+                    format!("Identifier `{}` is already declared in scope", name)
+                );
                 continue;
             }
 
@@ -338,10 +356,16 @@ fn process_var_decls<'a>(
                 Some(expr) => {
                     let expr_ir = expr2ir(&expr, &scope, typ.clone(),
                                           source_name, &source);
+
                     if let Some(_) = irlist_to_lit(&expr_ir) {
                         expr_ir.last().unwrap().clone()
                     } else {
-                        // TODO: handle non-literal var initializer
+                        report_semantic_error(
+                            &expr2span(&expr),
+                            source_name, &source,
+                            "Non-literal initializer",
+                            format!("initializer must be comptime-known value")
+                        );
                         continue;
                     }
                 }
@@ -425,7 +449,7 @@ fn stmt2ir<'a>(
             if return_expects != IRType::Void {
                 report_semantic_error(
                     span, source_name, source,
-                    "empty return",
+                    "Empty return",
                     format!("Return must be of type {:?}", return_expects)
                 );
             };
@@ -436,7 +460,7 @@ fn stmt2ir<'a>(
             if return_expects == IRType::Void {
                 report_semantic_error(
                     span, source_name, source,
-                    "unexpected return value",
+                    "Unexpected return value",
                     "Return must be empty".to_string()
                 );
                 vec![(IRType::Void, IR::Return)]
@@ -562,7 +586,7 @@ fn expr2ir<'a>(
                 ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
                     report_semantic_error(
                         span, source_name, source,
-                        "invalid identifier",
+                        "Invalid identifier",
                         "Can not pass procedures as values yet".to_string()
                     );
                     vec![(IRType::Error, IR::Error)]
@@ -572,7 +596,7 @@ fn expr2ir<'a>(
                 ScopeItem::None => {
                     report_semantic_error(
                         span, source_name, source,
-                        "unknown identifier",
+                        "Unknown identifier",
                         format!("Identifier `{}` not found in scope", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
@@ -614,7 +638,7 @@ fn expr2ir<'a>(
                     _ => {
                         report_semantic_error(
                             span, source_name, source,
-                            "unsupported operator",
+                            "Unsupported operator",
                             format!("Operator {:?} not implemented yet", op)
                         );
                         IR::Error
@@ -633,7 +657,7 @@ fn expr2ir<'a>(
                     if arg_types.len() != args.len() {
                         report_semantic_error(
                             span, source_name, source,
-                            "invalid number of arguments",
+                            "Invalid number of arguments",
                             format!("Expected {} arguments, found {}",
                                     arg_types.len(), args.len())
                         );
@@ -655,7 +679,7 @@ fn expr2ir<'a>(
                 ScopeItem::Const(_) | ScopeItem::Var(_, _, _) => {
                     report_semantic_error(
                         span, source_name, source,
-                        "not a procedure",
+                        "Not a procedure",
                         format!("Identifier `{}` is not a procedure", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
@@ -664,7 +688,7 @@ fn expr2ir<'a>(
                 ScopeItem::None => {
                     report_semantic_error(
                         span, source_name, source,
-                        "unknown identifier",
+                        "Unknown identifier",
                         format!("Identifier `{}` not found in scope", idnt.name)
                     );
                     vec![(IRType::Error, IR::Error)]
@@ -699,7 +723,7 @@ fn left_value2ir<'a>(
                 ScopeItem::Const(_) => {
                     report_semantic_error(
                         span, source_name, source,
-                        "invalid left value",
+                        "Invalid left value",
                         "Cannot assign to constants".to_string()
                     );
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
@@ -709,7 +733,7 @@ fn left_value2ir<'a>(
                 ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
                     report_semantic_error(
                         span, source_name, source,
-                        "invalid left value",
+                        "Invalid left value",
                         "Cannot assign to procedure".to_string()
                     );
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
@@ -719,7 +743,7 @@ fn left_value2ir<'a>(
                 ScopeItem::None => {
                     report_semantic_error(
                         span, source_name, source,
-                        "unknown identifier",
+                        "Unknown identifier",
                         format!("Identifier `{}` not found in scope", idnt.name)
                     );
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
@@ -786,7 +810,7 @@ mod tests {
         assert_eq!(
             expr2ir(
                 &Expr::Unop(PS, Unop::Neg, Box::new(
-                        Expr::Ident(PS, Ident {name: "nonexistetn", namespace: vec!["n"]}))),
+                        Expr::Ident(PS, Ident {name: "nonexistent", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
                 (IRType::Error, IR::Error),
@@ -807,11 +831,12 @@ mod tests {
                 get_test_scope(), IRType::I64, &String::new(), ""),
             vec![
                 (IRType::I32, IR::GlobalGet("raw_x".to_string())),
-                (IRType::I64, IR::Cast(IRType::I32)),
                 (IRType::I64, IR::LitInt(5)),
                 (IRType::I64, IR::LitInt(9)),
                 (IRType::I64, IR::Mul(false)),
-                (IRType::I64, IR::Add),
+                (IRType::I32, IR::Cast(IRType::I64)),
+                (IRType::I32, IR::Add),
+                (IRType::I64, IR::Cast(IRType::I32)), // ??
             ]
         )
     }
