@@ -522,6 +522,7 @@ where
         simple_type()
             .then(
                 select!{ Token::Ident(s) => s }
+                .map_with(|s, e| (if !cfg!(test) {e.span()} else {PS}, s))
                 .separated_by(just(Token::Comma))
                 .at_least(1)
                 .collect::<Vec<_>>()
@@ -602,6 +603,7 @@ where
         // PROC
         just(Token::Proc)
             .ignore_then(name_optional_namespace_declare())
+            .map_with(|ident, e| (if !cfg!(test) {e.span()} else {PS}, ident))
             .then(proc_args_decl())
             .then(choice((
                 just(Token::Colon).ignore_then(simple_type()),
@@ -771,10 +773,10 @@ mod tests {
                     RETURN 7
                 END
                 "),
-        Ok(TopLevel::ProcDecl( Ident {name: "foo", namespace: vec!["bar"]},
+        Ok(TopLevel::ProcDecl((PS, Ident {name: "foo", namespace: vec!["bar"]}),
                 vec![
-                    (Type::I32, vec!["a", "b"]),
-                    (Type::F64, vec!["c"])],
+                    (Type::I32, vec![(PS, "a"), (PS, "b")]),
+                    (Type::F64, vec![(PS, "c")])],
                 Type::I32, Some("exp"),
                 vec![
                     ProcDeclBlock::Var(vec![
@@ -794,7 +796,7 @@ mod tests {
                 ])));
 
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
-        Ok(TopLevel::ProcDecl(Ident {name: "foo", namespace: vec![]},
+        Ok(TopLevel::ProcDecl((PS, Ident {name: "foo", namespace: vec![]}),
                 vec![], Type::Void, None, vec![], vec![
                     Stmt::Assign(LeftValue::Ident(PS,
                                      Ident { name: "i", namespace: vec![] }),

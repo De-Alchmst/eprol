@@ -36,6 +36,8 @@ struct Scope {
     namespaces: HashMap<String, Scope>,
 }
 
+// GLOBAL STATE //
+
 // cache for already processed files imported at multiple places
 static _FILE_CACHE: OnceLock<Mutex<HashMap<&str, Scope>>> = OnceLock::new();
 fn _get_file_cache<'a>() -> &'static Mutex<HashMap<&'a str, Scope>> {
@@ -48,10 +50,6 @@ static DATA_SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 fn get_data_set<'a>() -> &'static Mutex<HashSet<String>> {
     DATA_SET.get_or_init(|| Mutex::new(HashSet::new()))
 }
-
-// flag to signal whether compilation finished successfully or not
-// don't join files if errors found
-pub static mut FOUND_ERRORS: bool = false;
 
 
 
@@ -98,9 +96,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // IMPORTS
     for top_level in imports_to_process {
         if let TopLevel::Import(span, outer, inner, typ) = top_level {
-            let val = scope.search(&inner);
-
-            if let ScopeItem::None = val {
+            if matches!(scope.search(&inner), ScopeItem::None) {
                 let typ = asttype2irtype(typ);
                 let raw_name = raw_name(&inner, source_name);
                 
@@ -120,6 +116,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                 }
 
                 import_ir.push((outer, raw_name, typ));
+
             } else {
                 report_semantic_error(
                     &span, source_name, &source,
@@ -145,14 +142,19 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     // first puts proc into scope and second builds the IR
     // this is to allow for recursive and mutually recursive procs
     for top_level in &procs_to_process {
-        if let TopLevel::ProcDecl(idnt, args, ret_type, _export, _decls, _body)
+        if let TopLevel::ProcDecl(span_idnt, args, ret_type, _export, _decls, _body)
                = top_level
         {
+            let (span, idnt) = span_idnt;
             let raw_name = raw_name(&idnt, source_name);
             let ret_type = asttype2irtype(ret_type.clone());
 
             if matches!(scope.search(&idnt), ScopeItem::Proc(_, _, _)) {
-                // TODO: handle error of redeclaration
+                report_semantic_error(
+                    &span, source_name, &source,
+                    "Identifier redeclaration",
+                    format!("Identifier `{}` is already declared in scope", idnt.name)
+                );
             }
 
             let mut proc_args: Vec<IRType> = vec![];
@@ -168,9 +170,10 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
     
     for top_level in procs_to_process {
-        if let TopLevel::ProcDecl(idnt, args, ret_type, export, decls, body)
+        if let TopLevel::ProcDecl(span_idnt, args, ret_type, export, decls, body)
                = top_level
         {
+            let (_span, idnt) = span_idnt;
             let raw_name = raw_name(&idnt, source_name);
             let ret_type = asttype2irtype(ret_type);
 
@@ -185,7 +188,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             // register proc args
             for (typ, names) in args {
                 let typ = asttype2irtype(typ);
-                for name in names {
+                for (span, name) in names {
                     let raw_arg_name = raw_arg_name(name, &raw_name);
                     if !local_set.contains(&raw_arg_name.clone()) {
                         local_set.insert(raw_arg_name.clone());
@@ -194,7 +197,11 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                                            ScopeItem::Var(raw_arg_name,
                                                           typ.clone(), true));
                     } else {
-                        // TODO: handle error of duplicate argument name
+                        report_semantic_error(
+                            &span, source_name, &source,
+                            "Identifier redeclaration",
+                            format!("Identifier `{}` is already declared in scope", name)
+                        );
                     }
                 }
             }
@@ -246,8 +253,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
                                 local_scope.insert(&idnt,
                                                    ScopeItem::Var(raw_name.clone(),
-                                                                  typ.clone(),
-                                                                  true));
+                                                                  typ.clone(), true));
                                 // add local declaration
                                 local_vars.push((raw_name.clone(), typ.clone()));
 
@@ -302,16 +308,20 @@ fn process_const_decl<'a>(
     source: &str,
 ) {
     let idnt = Ident {name, namespace: nmspc.to_vec()};
-    let val = scope.search(&idnt);
 
-    if let ScopeItem::None = val {
+    if matches!(scope.search(&idnt), ScopeItem::None) {
         let expr_ir = expr2ir(&expr, &scope, IRType::Any, source_name, source);
         // if expression is literal
         if let Some(lit_val) = irlist_to_lit(&expr_ir) {
             scope.insert(&idnt, ScopeItem::Const(lit_val));
         } else {
-            // TODO: handle error on non-literal const value
+            report_semantic_error(
+                &span, source_name, &source,
+                "Non-literal initializer",
+                "initializer must be comptime-known value".to_string()
+            );
         }
+
     } else {
         report_semantic_error(
             &span, source_name, &source,
@@ -364,7 +374,7 @@ fn process_var_decls<'a>(
                             &expr2span(&expr),
                             source_name, &source,
                             "Non-literal initializer",
-                            format!("initializer must be comptime-known value")
+                            "initializer must be comptime-known value".to_string()
                         );
                         continue;
                     }

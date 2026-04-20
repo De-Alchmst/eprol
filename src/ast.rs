@@ -81,7 +81,7 @@ pub type VarDeclBlock<'a> = (Type, Vec<(SimpleSpan, &'a str, Option<Expr<'a>>)>)
 pub type ConstDeclBlock<'a> = Vec<(SimpleSpan, &'a str, Expr<'a>)>;
 
 // type, args
-pub type ProcArgs<'a> = (Type, Vec<&'a str>);
+pub type ProcArgs<'a> = (Type, Vec<(SimpleSpan, &'a str)>);
 #[derive(Debug, PartialEq)]
 pub enum ProcDeclBlock<'a> {
     Var(Vec<VarDeclBlock<'a>>),
@@ -93,7 +93,7 @@ pub enum TopLevel<'a> {
     ConstDecl(Vec<&'a str>, ConstDeclBlock<'a>),
     VarDecl(Vec<&'a str>, Vec<VarDeclBlock<'a>>),
     // name, args, return type, export name, decls, body
-    ProcDecl(Ident<'a>, Vec<ProcArgs<'a>>, Type, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
+    ProcDecl((SimpleSpan, Ident<'a>), Vec<ProcArgs<'a>>, Type, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
     // outer name, inner name, type
     Import(SimpleSpan, Vec<&'a str>, Ident<'a>, Type),
 }
