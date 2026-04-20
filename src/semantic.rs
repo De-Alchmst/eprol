@@ -55,7 +55,7 @@ fn get_data_set<'a>() -> &'static Mutex<HashSet<String>> {
 
 pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let source = read_to_string(source_name).expect("Failed to read source file");
-    let ast = parse_str_program(&source, source_name, &source);
+    let ast = parse_str_program(&source, source_name);
 
     let output_files = HashSet::new();
     let mut scope = Scope {
@@ -179,7 +179,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 
             // will fork scope for local proc
             // will allow shadowing, but `local_set` used to prevent duplicate
-            // idents within the function scope
+            // idents within the function scope first one does n
             // will not add to scope right aways, since it needs to add self first
             let mut local_scope = scope.clone();
             let mut local_set: HashSet<String> = HashSet::new();
@@ -367,7 +367,8 @@ fn process_var_decls<'a>(
                     let expr_ir = expr2ir(&expr, &scope, typ.clone(),
                                           source_name, &source);
 
-                    if let Some(_) = irlist_to_lit(&expr_ir) {
+                    // if is comptime-known
+                    if matches!(irlist_to_lit(&expr_ir), Some(_)) {
                         expr_ir.last().unwrap().clone()
                     } else {
                         report_semantic_error(

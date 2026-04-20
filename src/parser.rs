@@ -61,7 +61,7 @@ pub fn parse_str_top_level(input: &str) -> Result<TopLevel<'_>, Vec<Rich<'_, Tok
 }
 
 pub fn parse_str_program<'a>(
-    input: &'a str, source_name: &'a String, source: &'a str
+    input: &'a str, source_name: &'a String
 ) -> Program<'a> {
     let token_iter = Token::lexer(input)
         .spanned().map(|(tok, span)| match tok {
@@ -73,7 +73,7 @@ pub fn parse_str_program<'a>(
 
     let (tokens, errors) = program().parse(token_stream).into_output_errors();
     for error in errors {
-        report_parser_error(error, source_name, source);
+        report_parser_error(error, source_name, input);
     }
 
     match tokens {
