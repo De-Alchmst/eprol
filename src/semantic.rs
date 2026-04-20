@@ -13,6 +13,7 @@ use crate::{
     codegen::*,
 };
 use std::{
+    thread,
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
     fs::read_to_string
@@ -169,118 +170,130 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
         }
     }
     
-    for top_level in procs_to_process {
-        if let TopLevel::ProcDecl(span_idnt, args, ret_type, export, decls, body)
-               = top_level
-        {
-            let (_span, idnt) = span_idnt;
-            let raw_name = raw_name(&idnt, source_name);
-            let ret_type = asttype2irtype(ret_type);
+    // individual procedure bodies can be processed in parallel
+    thread::scope(|s| {
+        let mut handles = vec![];
 
-            // will fork scope for local proc
-            // will allow shadowing, but `local_set` used to prevent duplicate
-            // idents within the function scope first one does n
-            // will not add to scope right aways, since it needs to add self first
-            let mut local_scope = scope.clone();
-            let mut local_set: HashSet<String> = HashSet::new();
-            let mut proc_args: Vec<(String, IRType)> = vec![];
+        for top_level in procs_to_process {
+            if let TopLevel::ProcDecl(span_idnt, args, ret_type, export, decls, body)
+                   = top_level
+            {
+                let export = export.map(|s| s.to_string());
+                handles.push(s.spawn(||{
+                    let (_, idnt) = span_idnt;
+                    let raw_name = raw_name(&idnt, source_name);
+                    let ret_type = asttype2irtype(ret_type);
 
-            // register proc args
-            for (typ, names) in args {
-                let typ = asttype2irtype(typ);
-                for (span, name) in names {
-                    let raw_arg_name = raw_arg_name(name, &raw_name);
-                    if !local_set.contains(&raw_arg_name.clone()) {
-                        local_set.insert(raw_arg_name.clone());
-                        proc_args.push((raw_arg_name.clone(), typ.clone()));
-                        local_scope.insert(&Ident {name: name, namespace: vec![]},
-                                           ScopeItem::Var(raw_arg_name,
-                                                          typ.clone(), true));
-                    } else {
-                        report_semantic_error(
-                            &span, source_name, &source,
-                            "Identifier redeclaration",
-                            format!("Identifier `{}` is already declared in scope", name)
-                        );
-                    }
-                }
-            }
+                    // will fork scope for local proc
+                    // will allow shadowing, but `local_set` used to prevent duplicate
+                    // idents within the function scope first one does n
+                    let mut local_scope = scope.clone();
+                    let mut local_set: HashSet<String> = HashSet::new();
+                    let mut proc_args: Vec<(String, IRType)> = vec![];
 
-            // locals
-            // adds variable initialisations to `body_ir`
-            let mut local_vars: Vec<(String, IRType)> = vec![];
-            let mut body_ir: IRList = vec![];
+                    // register proc args
+                    for (typ, names) in args {
+                        let typ = asttype2irtype(typ);
+                        for (span, name) in names {
+                            let raw_arg_name = raw_arg_name(name, &raw_name);
 
-            for decl in decls {
-                match decl {
-                    ProcDeclBlock::Const(cdecls) => {
-                        for (span, name, expr) in cdecls {
-                            local_set.insert(raw_arg_name(name, &raw_name));
-                            process_const_decl(&mut local_scope, &[], span, name,
-                                               expr, source_name, &source);
-                        }
-                    }
-
-                    // cannot use `process_var_decls`, since it does not allow
-                    // shadowing and does not add anything to `local_vars`
-                    // and few other things...
-                    ProcDeclBlock::Var(vdecls) => {
-                        for (typ, vals) in vdecls {
-                            let typ = asttype2irtype(typ);
-
-                            for (span, name, init_expr) in vals {
-                                let idnt = Ident {name, namespace: vec![]};
-                                let raw_name = raw_arg_name(name, &raw_name);
-
-                                // already in local scope
-                                if local_set.contains(&raw_name.clone()) {
-                                    report_semantic_error(
-                                        &span, source_name, &source,
-                                        "Identifier redeclaration",
-                                        format!("Identifier `{}` is already declared in scope", name)
-                                    );
-                                    continue;
-                                }
-
-
-                                // Pre-compute initialization IR
-                                let init_ir = match init_expr {
-                                    None => vec![default_irtype_val(&typ)],
-                                    Some(expr)
-                                        => expr2ir(&expr, &local_scope, typ.clone(),
-                                                   source_name, &source),
-                                };
-
-                                local_scope.insert(&idnt,
-                                                   ScopeItem::Var(raw_name.clone(),
+                            if !local_set.contains(&raw_arg_name.clone()) {
+                                local_set.insert(raw_arg_name.clone());
+                                proc_args.push((raw_arg_name.clone(), typ.clone()));
+                                local_scope.insert(&Ident {name: name, namespace: vec![]},
+                                                   ScopeItem::Var(raw_arg_name,
                                                                   typ.clone(), true));
-                                // add local declaration
-                                local_vars.push((raw_name.clone(), typ.clone()));
-
-                                // init local variable
-                                body_ir.extend(init_ir);
-                                body_ir.push((IRType::Void,
-                                              IR::LocalSet(raw_name.clone())));
+                            } else {
+                                report_semantic_error(
+                                    &span, source_name, &source,
+                                    "Identifier redeclaration",
+                                    format!("Identifier `{}` is already declared in scope", name)
+                                );
                             }
                         }
                     }
-                }
+
+                    // locals
+                    // adds variable initialisations to `body_ir`
+                    let mut local_vars: Vec<(String, IRType)> = vec![];
+                    let mut body_ir: IRList = vec![];
+
+                    for decl in decls {
+                        match decl {
+                            ProcDeclBlock::Const(cdecls) => {
+                                for (span, name, expr) in cdecls {
+                                    local_set.insert(raw_arg_name(name, &raw_name));
+                                    process_const_decl(&mut local_scope, &[], span, name,
+                                                       expr, source_name, &source);
+                                }
+                            }
+
+                            // cannot use `process_var_decls`, since it does not allow
+                            // shadowing and does not add anything to `local_vars`
+                            // and few other things...
+                            ProcDeclBlock::Var(vdecls) => {
+                                for (typ, vals) in vdecls {
+                                    let typ = asttype2irtype(typ);
+
+                                    for (span, name, init_expr) in vals {
+                                        let idnt = Ident {name, namespace: vec![]};
+                                        let raw_name = raw_arg_name(name, &raw_name);
+
+                                        // already in local scope
+                                        if local_set.contains(&raw_name.clone()) {
+                                            report_semantic_error(
+                                                &span, source_name, &source,
+                                                "Identifier redeclaration",
+                                                format!("Identifier `{}` is already declared in scope", name)
+                                            );
+                                            continue;
+                                        }
+
+
+                                        // Pre-compute initialization IR
+                                        let init_ir = match init_expr {
+                                            None => vec![default_irtype_val(&typ)],
+                                            Some(expr)
+                                                => expr2ir(&expr, &local_scope, typ.clone(),
+                                                           source_name, &source),
+                                        };
+
+                                        local_scope.insert(&idnt,
+                                                           ScopeItem::Var(raw_name.clone(),
+                                                                          typ.clone(), true));
+                                        // add local declaration
+                                        local_vars.push((raw_name.clone(), typ.clone()));
+
+                                        // init local variable
+                                        body_ir.extend(init_ir);
+                                        body_ir.push((IRType::Void,
+                                                      IR::LocalSet(raw_name.clone())));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // body
+                    // TODO: check if all paths return a value
+                    for stmt in body {
+                        body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
+                                               &source, ret_type.clone()));
+                    }
+                    
+                    TopLevelIR::Proc(raw_name, proc_args, ret_type, 
+                                     if let Some(s) = export {
+                                         Some(s.to_string())
+                                     } else { None },
+                                     local_vars, body_ir)
+                }));
             }
-            
-            // body
-            // TODO: check if all paths return a value
-            for stmt in body {
-                body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
-                                       &source, ret_type.clone()));
-            }
-            
-            regular_ir.push(TopLevelIR::Proc(raw_name, proc_args, ret_type, 
-                                             if let Some(s) = export {
-                                                 Some(s.to_string())
-                                             } else { None },
-                                             local_vars, body_ir));
         }
-    }
+
+        for handle in handles {
+            regular_ir.push(handle.join().unwrap());
+        }
+    });
 
     // don't produce any code if errors found
     if !error_appeared() {
