@@ -321,10 +321,10 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     choice((
-        // Malform statement
+        // Malformed statement
         // might start with matching a valid statement
-        // for example in `abc def := 42`, `abc` is a valid statement, but it's not
-        // as a whole
+        // for example in `abc() def := 42`, `abc()` is a valid statement,
+        // but it's not as a whole
         bare_stmt().or_not().ignore_then(
             none_of([Token::Semicolon, Token::End])
             .repeated()

@@ -282,8 +282,8 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                     }
                     
                     TopLevelIR::Proc(raw_name, proc_args, ret_type, 
-                                     if let Some(s) = export {
-                                         Some(s.to_string())
+                                     if matches!(export, Some(_)) {
+                                         export
                                      } else { None },
                                      local_vars, body_ir)
                 }));
