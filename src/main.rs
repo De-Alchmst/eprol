@@ -3,6 +3,8 @@ pub mod ast;
 pub mod parser;
 pub mod ir;
 pub mod semantic;
+pub mod semantic_types;
+pub mod semantic_expressions;
 pub mod codegen;
 pub mod name_encoding;
 pub mod errors;
