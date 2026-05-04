@@ -15,6 +15,9 @@ use crate::{
         expr2ir,
         left_value2ir,
     },
+    semantic_top_level::{
+        process_imports,
+    },
     semantic_types::{
         Scope,
         ScopeItem,
@@ -46,7 +49,6 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
     // imports must be first
-    let mut import_ir: ImportIRList = vec![];
     let mut regular_ir: TopLevelIRList = vec![];
 
     // needs to process statements in specific order
@@ -71,40 +73,9 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
 
-    // IMPORTS
-    for top_level in imports_to_process {
-        if let TopLevel::Import(span, outer, inner, typ) = top_level {
-            if matches!(scope.search(&inner), ScopeItem::None) {
-                let typ = asttype2irtype(typ);
-                let raw_name = raw_name(&inner, source_name);
-                
-                match typ.clone() {
-                    IRType::Func(arg_types, ret_type) => {
-                        scope.insert(&inner, ScopeItem::Proc(raw_name.clone(),
-                                     arg_types, *ret_type));
-                    },
-
-                    IRType::I32 | IRType::I64 | IRType::F32 | IRType::F64 => {
-                        scope.insert(&inner, ScopeItem::Var(raw_name.clone(),
-                                     typ.clone(), false));
-                    },
-                    
-                    // void
-                    _ => unreachable!()
-                }
-
-                import_ir.push((outer, raw_name, typ));
-
-            } else {
-                report_semantic_error(
-                    &span, source_name, &source,
-                    "Identifier redeclaration",
-                    format!("Identifier `{}` is already declared in scope", inner.name)
-                );
-            }
-        }
-    }
-
+    // IMPlRTS
+    let import_ir = process_imports(imports_to_process,
+                                    &mut scope, source_name, &source);
 
     // VARS
     for top_level in vars_to_process {
