@@ -17,11 +17,12 @@ use crate::{
     },
     semantic_top_level::{
         process_imports,
+        process_const_decls,
+        process_var_decls,
     },
     semantic_types::{
         Scope,
         ScopeItem,
-        LitVal,
         get_data_set,
     }
 };
@@ -30,8 +31,6 @@ use std::{
     collections::{HashMap, HashSet},
     fs::read_to_string
 };
-use chumsky::span::SimpleSpan;
-
 
 
 pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
@@ -48,7 +47,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
         return output_files;
     }
 
-    // imports must be first
+    // in contrast to import_ir
     let mut regular_ir: TopLevelIRList = vec![];
 
     // needs to process statements in specific order
@@ -64,26 +63,19 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
-                for (span, name, expr) in decls {
-                    process_const_decl(&mut scope, &nmspc, span, name, expr,
-                                       source_name, &source);
-                }
+                process_const_decls(decls, nmspc, &mut scope, source_name, &source);
             }
         }
     }
 
 
-    // IMPlRTS
+    // IMPORTS
     let import_ir = process_imports(imports_to_process,
                                     &mut scope, source_name, &source);
 
     // VARS
-    for top_level in vars_to_process {
-        if let TopLevel::VarDecl(nmspc, decls) = top_level {
-            process_var_decls(&mut scope, &nmspc, decls, &mut regular_ir,
-                              source_name, &source);
-        }
-    }
+    process_var_decls(vars_to_process, &mut scope, &mut regular_ir,
+                      source_name, &source);
 
 
     // PROCS
@@ -166,13 +158,17 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
                     let mut local_vars: Vec<(String, IRType)> = vec![];
                     let mut body_ir: IRList = vec![];
 
+                    // TODO: can probably be done better
                     for decl in decls {
                         match decl {
                             ProcDeclBlock::Const(cdecls) => {
-                                for (span, name, expr) in cdecls {
+                                process_const_decls(cdecls.clone(), vec![],
+                                                    &mut local_scope,
+                                                    source_name, &source);
+                                for (_span, name, _expr) in cdecls {
                                     local_set.insert(raw_arg_name(name, &raw_name));
-                                    process_const_decl(&mut local_scope, &[], span, name,
-                                                       expr, source_name, &source);
+                                    // process_const_decl(&mut local_scope, &[], span, name,
+                                    //                    expr, source_name, &source);
                                 }
                             }
 
@@ -257,110 +253,6 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
 }
 
 
-/// Process a const declaration block
-/// Evaluates constant expressions and adds them to the scope
-fn process_const_decl<'a>(
-    scope: &mut Scope,
-    nmspc: &[&'a str],
-    span: SimpleSpan,
-    name: &'a str,
-    expr: Expr<'a>,
-    source_name: &String,
-    source: &str,
-) {
-    let idnt = Ident {name, namespace: nmspc.to_vec()};
-
-    if matches!(scope.search(&idnt), ScopeItem::None) {
-        let expr_ir = expr2ir(&expr, &scope, IRType::Any, source_name, source);
-        // if expression is literal
-        if let Some(lit_val) = irlist_to_lit(&expr_ir) {
-            scope.insert(&idnt, ScopeItem::Const(lit_val));
-        } else {
-            report_semantic_error(
-                &span, source_name, &source,
-                "Non-literal initializer",
-                "initializer must be comptime-known value".to_string()
-            );
-        }
-
-    } else {
-        report_semantic_error(
-            &span, source_name, &source,
-            "Identifier redeclaration",
-            format!("Identifier `{}` is already declared in scope", name)
-        );
-    }
-}
-
-
-// Process a variable declaration block
-// Declares variables in scope and generates global variable IR
-fn process_var_decls<'a>(
-    scope: &mut Scope,
-    nmspc: &[&'a str],
-    decls: Vec<VarDeclBlock<'a>>,
-    regular_ir: &mut TopLevelIRList,
-    source_name: &String,
-    source: &str,
-) {
-    // move from here
-    for (typ, vals) in decls {
-        let typ = asttype2irtype(typ);
-
-        for (span, name, init_expr) in vals {
-            let idnt = Ident {name, namespace: nmspc.to_vec()};
-            let raw_name = raw_name(&idnt, source_name);
-
-            // Already in scope
-            if !matches!(scope.search(&idnt), ScopeItem::None) {
-                report_semantic_error(
-                    &span, source_name, &source,
-                    "Identifier redeclaration",
-                    format!("Identifier `{}` is already declared in scope", name)
-                );
-                continue;
-            }
-
-            // Pre-compute initialization IR
-            let init_ir = match init_expr {
-                None => default_irtype_val(&typ),
-                Some(expr) => {
-                    let expr_ir = expr2ir(&expr, &scope, typ.clone(),
-                                          source_name, &source);
-
-                    // if is comptime-known
-                    if matches!(irlist_to_lit(&expr_ir), Some(_)) {
-                        expr_ir.last().unwrap().clone()
-                    } else {
-                        report_semantic_error(
-                            &expr2span(&expr),
-                            source_name, &source,
-                            "Non-literal initializer",
-                            "initializer must be comptime-known value".to_string()
-                        );
-                        continue;
-                    }
-                }
-            };
-
-            scope.insert(&idnt, ScopeItem::Var(raw_name.clone(),
-                                               typ.clone(), false));
-            regular_ir.push(TopLevelIR::GlobalVar(raw_name, init_ir));
-        }
-    }
-}
-
-
-fn irlist_to_lit(ir: &IRList) -> Option<LitVal> {
-    match ir.last() {
-        Some((_, IR::LitInt(x))) => Some(LitVal::Int(*x)),
-        Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
-        Some((_, IR::LitStr(s))) => Some(LitVal::Str(s.clone())),
-        _ => None
-    }
-}
-
-
 fn stmt2ir<'a>(
     stmt: &Stmt<'a>, scope: &Scope,
     source_name: &String,
@@ -424,6 +316,7 @@ mod tests {
     use std::{
         sync::{OnceLock},
     };
+    use crate::semantic_types::LitVal;
 
     static TEST_SCOPE: OnceLock<Scope> = OnceLock::new();
     fn get_test_scope<'a>() -> &'static Scope {
