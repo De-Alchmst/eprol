@@ -1,8 +1,34 @@
 use logos::Logos;
 use std::fmt;
 
+// TODO: unclosed comments currently just ignore rest of flle, maybe not deal behavior
+fn comment_callback<'a, 'b : 'a>(
+    lex: &'a mut logos::Lexer<'b, Token<'b>>
+) -> logos::Skip {
+    let mut depth = 1;
+    let mut remainder = lex.remainder();
+
+    lex.bump(2); // Skip the initial "(*"
+    while depth > 0 && remainder.len() > 1 {
+        if remainder.starts_with("(*") {
+            depth += 1;
+            lex.bump(2);
+        } else if remainder.starts_with("*)") {
+            depth -= 1;
+            lex.bump(2);
+        } else {
+            lex.bump(1);
+        }
+
+        remainder = lex.remainder();
+    }
+
+    logos::Skip
+}
+
 #[derive(Logos, Clone, PartialEq, Debug)]
-#[logos(skip r"[ \t\n\f]+")]
+#[logos(skip(r"[ \t\n\f]+"))]
+#[logos(skip(r"\(\*", comment_callback))]
 pub enum Token<'a> {
     Error,
 
