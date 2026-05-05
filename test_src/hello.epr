@@ -18,6 +18,7 @@ END
  And neither of them breaks line/character count of following tokens
  lel
 *)
+(**)
 
 PROC start
 EXPORT "start"

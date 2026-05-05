@@ -100,6 +100,65 @@ where
 }
 
 
+fn possibly_negative_int<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, i64, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    just(Token::Minus).or_not()
+        .then(select! { Token::Int(n) => n })
+        .map(|(neg, n)| {
+            let n = n.parse().unwrap_or(0);
+            if neg.is_some() { -n } else { n }
+        })
+}
+
+
+fn accessor<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Accessor<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+{
+    just(Token::LSquare)
+        .ignore_then(
+            choice((
+                // [type:len:count]
+                simple_type()
+                    .then_ignore(just(Token::Colon))
+                    .then(possibly_negative_int())
+                    .then_ignore(just(Token::Colon))
+                    .then(expr())
+                    .map(|((typ, len), count)|
+                        Accessor {
+                            typ: typ,
+                            offset_len: len,
+                            offset: count,
+                        }),
+
+                // [type:offset]
+                simple_type()
+                    .then_ignore(just(Token::Colon))
+                    .then(expr())
+                    .map(|(typ, offset)|
+                        Accessor {
+                            typ: typ.clone(),
+                            offset_len: type_len(typ),
+                            offset: offset,
+                        }),
+
+                // [offset]
+                expr().map(|offset|
+                    Accessor {
+                        typ: Type::I32,
+                        offset_len: 4,
+                        offset,
+                    }),
+            ))
+        )
+        .then_ignore(just(Token::RSquare))
+}
+
+
 fn expr<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Expr<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -138,13 +197,22 @@ where
                 Expr::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
         )).boxed();
 
+        let raw_access = end_node.clone().foldl_with(
+            accessor()
+            .repeated(),
+            |lhs, access, e|
+            Expr::Access(
+                if !cfg!(test) {e.span()} else {PS},
+                Box::new(lhs), Box::new(access))
+        ).boxed();
+
         let unop = choice((
             just(Token::Minus),
             just(Token::Plus),
             just(Token::Not)
         ))
             .repeated()
-            .foldr_with(end_node, |op, rhs, e| {
+            .foldr_with(raw_access, |op, rhs, e| {
                 let span = if !cfg!(test) {e.span()} else {PS};
                 match op {
                     Token::Minus => Expr::Unop(span, Unop::Neg, Box::new(rhs)),

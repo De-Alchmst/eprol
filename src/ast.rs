@@ -19,6 +19,13 @@ pub enum Type {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct Accessor<'a> {
+    pub typ: Type,
+    pub offset_len: i64,
+    pub offset: Expr<'a>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Binop {
     Add,
     Sub,
@@ -59,6 +66,7 @@ pub enum Expr<'a> {
     Binop(SimpleSpan, Binop, Box<Expr<'a>>, Box<Expr<'a>>),
     Ident(SimpleSpan, Ident<'a>),
     ProcCall(SimpleSpan, Ident<'a>, Vec<Expr<'a>>),
+    Access(SimpleSpan, Box<Expr<'a>>, Box<Accessor<'a>>),
     Malformed,
 }
 
@@ -107,7 +115,18 @@ pub fn expr2span(expr: &Expr) -> SimpleSpan {
         Expr::Unop(span, _, _) |
         Expr::Binop(span, _, _, _) |
         Expr::Ident(span, _) |
-        Expr::ProcCall(span, _, _) => *span,
+        Expr::ProcCall(span, _, _) |
+        Expr::Access(span, _, _) => *span,
         Expr::Malformed => PS,
+    }
+}
+
+
+pub fn type_len(typ: Type) -> i64 {
+    match typ {
+        Type::I32 | Type::F32 => 4,
+        Type::I64 | Type::F64 => 8,
+        Type::Void => 0,
+        Type::Proc(_, _) => unreachable!(),
     }
 }

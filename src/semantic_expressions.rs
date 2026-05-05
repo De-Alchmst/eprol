@@ -222,8 +222,13 @@ pub fn expr2ir<'a>(
             }
         }
 
+        // ACCESSORS
+        Expr::Access(_span, _exp, _access) => {
+            vec![(expects, IR::Error)]
+        }
+
         // Malformed expressions, errors are already reported by the parser
-        Expr::Malformed => vec![(expects, IR::Error)],
+        Expr::Malformed => vec![(expects, IR::Error)]
     }
 }
 

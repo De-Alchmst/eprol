@@ -8,18 +8,17 @@ fn comment_callback<'a, 'b : 'a>(
     let mut depth = 1;
     let mut remainder = lex.remainder();
 
-    lex.bump(2); // Skip the initial "(*"
+    lex.bump(2); // Skip the initial `(*`
+
     while depth > 0 && remainder.len() > 1 {
         if remainder.starts_with("(*") {
             depth += 1;
-            lex.bump(2);
+            lex.bump(1); // move past the star to not catch `(*)`
         } else if remainder.starts_with("*)") {
             depth -= 1;
-            lex.bump(2);
-        } else {
-            lex.bump(1);
         }
 
+        lex.bump(1);
         remainder = lex.remainder();
     }
 
