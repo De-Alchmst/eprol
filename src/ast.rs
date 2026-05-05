@@ -73,6 +73,7 @@ pub enum Expr<'a> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum LeftValue<'a> {
     Ident(SimpleSpan, Ident<'a>),
+    Access(SimpleSpan, Expr<'a>, Accessor<'a>),
     Malformed
 }
 

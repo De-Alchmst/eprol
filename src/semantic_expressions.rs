@@ -224,7 +224,7 @@ pub fn expr2ir<'a>(
 
         // ACCESSORS
         Expr::Access(_span, _exp, _access) => {
-            vec![(expects, IR::Error)]
+            todo!("Accessors not implemented yet");
         }
 
         // Malformed expressions, errors are already reported by the parser
@@ -280,6 +280,10 @@ pub fn left_value2ir<'a>(
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
                 }
             }
+        }
+
+        LeftValue::Access(_span, _exp, _access) => {
+            todo!("Accessors not implemented yet");
         }
 
         LeftValue::Malformed => {

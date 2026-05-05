@@ -114,10 +114,12 @@ where
 }
 
 
-fn accessor<'tokens, 'src: 'tokens, I>(
+fn accessor<'tokens, 'src: 'tokens, I, P>(
+    exp: P,
 ) -> impl Parser<'tokens, I, Accessor<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+    P: Parser<'tokens, I, Expr<'src>, extra::Err<Rich<'tokens, Token<'src>>>> + Clone,
 {
     just(Token::LSquare)
         .ignore_then(
@@ -127,7 +129,7 @@ where
                     .then_ignore(just(Token::Colon))
                     .then(possibly_negative_int())
                     .then_ignore(just(Token::Colon))
-                    .then(expr())
+                    .then(exp.clone())
                     .map(|((typ, len), count)|
                         Accessor {
                             typ: typ,
@@ -138,7 +140,7 @@ where
                 // [type:offset]
                 simple_type()
                     .then_ignore(just(Token::Colon))
-                    .then(expr())
+                    .then(exp.clone())
                     .map(|(typ, offset)|
                         Accessor {
                             typ: typ.clone(),
@@ -147,7 +149,7 @@ where
                         }),
 
                 // [offset]
-                expr().map(|offset|
+                exp.map(|offset|
                     Accessor {
                         typ: Type::I32,
                         offset_len: 4,
@@ -198,7 +200,7 @@ where
         )).boxed();
 
         let raw_access = end_node.clone().foldl_with(
-            accessor()
+            accessor(exp.clone())
             .repeated(),
             |lhs, access, e|
             Expr::Access(
@@ -305,8 +307,17 @@ fn bare_left_value<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    ident().map_with(|i, e|
-        LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i))
+    let exp = expr().boxed();
+
+    choice((
+        ident().map_with(|i, e|
+            LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
+
+        exp.clone().then(accessor(exp))
+            .map_with(|(exp, acc), e|
+                LeftValue::Access(if !cfg!(test) {e.span()} else {PS},
+                                  exp, acc)),
+    ))
 }
 
 
@@ -717,50 +728,87 @@ mod tests {
     fn basic_unop() {
         assert_eq!(parse_str_expr("NOT --+-42"),
         Ok(Expr::Unop(PS, Unop::Not,
+            Box::new(Expr::Unop(PS, Unop::Neg,
                 Box::new(Expr::Unop(PS, Unop::Neg,
                     Box::new(Expr::Unop(PS, Unop::Neg,
-                        Box::new(Expr::Unop(PS, Unop::Neg,
-                            Box::new(Expr::Lit(PS, Literal::Int(42))))))))))))
+                        Box::new(Expr::Lit(PS, Literal::Int(42))))))))))))
     }
 
     #[test]
     fn basic_binop() {
         assert_eq!(parse_str_expr("-2 + (6 - 9) * +7 + 9"),
         Ok(Expr::Binop(PS, Binop::Add,
-                Box::new(Expr::Binop(PS, Binop::Add,
-                        Box::new(Expr::Unop(PS, Unop::Neg,
-                                Box::new(Expr::Lit(PS, Literal::Int(2))))),
-                        Box::new(Expr::Binop(PS, Binop::Mul,
-                                Box::new(Expr::Binop(PS, Binop::Sub,
-                                        Box::new(Expr::Lit(PS, Literal::Int(6))),
-                                        Box::new(Expr::Lit(PS, Literal::Int(9))))),
-                                Box::new(Expr::Lit(PS, Literal::Int(7))))))),
-                Box::new(Expr::Lit(PS, Literal::Int(9))))))
+            Box::new(Expr::Binop(PS, Binop::Add,
+                Box::new(Expr::Unop(PS, Unop::Neg,
+                    Box::new(Expr::Lit(PS, Literal::Int(2))))),
+                Box::new(Expr::Binop(PS, Binop::Mul,
+                    Box::new(Expr::Binop(PS, Binop::Sub,
+                        Box::new(Expr::Lit(PS, Literal::Int(6))),
+                        Box::new(Expr::Lit(PS, Literal::Int(9))))),
+                    Box::new(Expr::Lit(PS, Literal::Int(7))))))),
+            Box::new(Expr::Lit(PS, Literal::Int(9))))))
     }
 
     #[test]
         fn basic_idents() {
         assert_eq!(parse_str_expr("a.b.c + ni"),
         Ok(Expr::Binop(PS, Binop::Add,
-                Box::new(Expr::Ident(PS, Ident { name: "a",  namespace: vec!["b", "c"] })),
-                Box::new(Expr::Ident(PS, Ident { name: "ni", namespace: vec![] })))))
+            Box::new(Expr::Ident(PS, Ident { name: "a",  namespace: vec!["b", "c"] })),
+            Box::new(Expr::Ident(PS, Ident { name: "ni", namespace: vec![] })))))
     }
 
     #[test]
     fn assignment() {
         assert_eq!(parse_str_stmt("foo := 1-2"),
         Ok(Stmt::Assign(LeftValue::Ident(PS, Ident {name: "foo", namespace: vec![]}),
-                Expr::Binop(PS, Binop::Sub,
-                    Box::new(Expr::Lit(PS, Literal::Int(1))),
-                    Box::new(Expr::Lit(PS, Literal::Int(2)))))))
+            Expr::Binop(PS, Binop::Sub,
+                Box::new(Expr::Lit(PS, Literal::Int(1))),
+                Box::new(Expr::Lit(PS, Literal::Int(2)))))))
     }
 
     #[test]
     fn expr_stmt() {
         assert_eq!(parse_str_expr("3+7"),
         Ok(Expr::Binop(PS, Binop::Add,
-                Box::new(Expr::Lit(PS, Literal::Int(3))),
-                Box::new(Expr::Lit(PS, Literal::Int(7))))))
+            Box::new(Expr::Lit(PS, Literal::Int(3))),
+            Box::new(Expr::Lit(PS, Literal::Int(7))))))
+    }
+
+    #[test]
+    fn raw_accessor() {
+        assert_eq!(parse_str_stmt("a[3] := 7"),
+        Ok(Stmt::Assign(
+            LeftValue::Access(PS,
+                Expr::Ident(PS, Ident { name: "a", namespace: vec![] }),
+                Accessor {
+                    typ: Type::I32,
+                    offset_len: 4,
+                    offset: Expr::Lit(PS, Literal::Int(3))
+                 }),
+            Expr::Lit(PS, Literal::Int(7)))));
+
+        assert_eq!(parse_str_expr("a[3] + b[I32:2][F64:2:1]"),
+        Ok(Expr::Binop(PS, Binop::Add,
+            Box::new(Expr::Access(PS,
+                Box::new(Expr::Ident(PS, Ident { name: "a", namespace: vec![] })),
+                Box::new(Accessor {
+                    typ: Type::I32,
+                    offset_len: 4,
+                    offset: Expr::Lit(PS, Literal::Int(3))
+                }))),
+            Box::new(Expr::Access(PS,
+                Box::new(Expr::Access(PS,
+                    Box::new(Expr::Ident(PS, Ident { name: "b", namespace: vec![] })),
+                    Box::new(Accessor {
+                        typ: Type::F64,
+                        offset_len: 2,
+                        offset: Expr::Lit(PS, Literal::Int(1))
+                    }))),
+                Box::new(Accessor {
+                    typ: Type::I32,
+                    offset_len: 4,
+                    offset: Expr::Lit(PS, Literal::Int(2))
+                }))))))
     }
 
     #[test]
@@ -784,21 +832,23 @@ mod tests {
         Ok(TopLevel::VarDecl(vec![], vec![])));
 
         assert_eq!(parse_str_top_level("VAR : V I32 foo, bar := 3, baz END"),
-        Ok(TopLevel::VarDecl(vec!["V"],
-                vec![
-                    (Type::I32, vec![
-                        (PS, "foo", None),
-                        (PS, "bar", Some(Expr::Lit(PS, Literal::Int(3)))),
-                        (PS, "baz", None),
-                    ])
-                ])));
+        Ok(TopLevel::VarDecl(
+            vec!["V"],
+            vec![
+                (Type::I32, vec![
+                    (PS, "foo", None),
+                    (PS, "bar", Some(Expr::Lit(PS, Literal::Int(3)))),
+                    (PS, "baz", None),
+                ])
+            ])));
 
         assert_eq!(parse_str_top_level("VAR I32 foo, I64 bar := 7 END"),
-        Ok(TopLevel::VarDecl(vec![],
-                vec![
-                    (Type::I32, vec![(PS, "foo", None)]),
-                    (Type::I64, vec![(PS, "bar", Some(Expr::Lit(PS, Literal::Int(7))))]),
-                ])));
+        Ok(TopLevel::VarDecl(
+            vec![],
+            vec![
+                (Type::I32, vec![(PS, "foo", None)]),
+                (Type::I64, vec![(PS, "bar", Some(Expr::Lit(PS, Literal::Int(7))))]),
+            ])));
     }
 
     #[test]
@@ -807,24 +857,25 @@ mod tests {
         Ok(TopLevel::ConstDecl(vec![], vec![])));
 
         assert_eq!(parse_str_top_level("CONST : re.ee foo = 3, bar = 7, END"),
-        Ok(TopLevel::ConstDecl(vec!["re", "ee"],
-                vec![
-                    (PS, "foo", Expr::Lit(PS, Literal::Int(3))),
-                    (PS, "bar", Expr::Lit(PS, Literal::Int(7))),
-                ])));
+        Ok(TopLevel::ConstDecl(
+            vec!["re", "ee"],
+            vec![
+                (PS, "foo", Expr::Lit(PS, Literal::Int(3))),
+                (PS, "bar", Expr::Lit(PS, Literal::Int(7))),
+            ])));
     }
 
     #[test]
     fn proc_call() {
         assert_eq!(parse_str_expr("a.b(c(), 1+2)"),
         Ok(Expr::ProcCall(PS, Ident { name: "a", namespace: vec!["b"] },
-                vec![
-                    Expr::ProcCall(PS, Ident { name: "c", namespace: vec![] },
-                        vec![]),
-                    Expr::Binop(PS, Binop::Add,
-                        Box::new(Expr::Lit(PS, Literal::Int(1))),
-                        Box::new(Expr::Lit(PS, Literal::Int(2))))
-                ])))
+            vec![
+                Expr::ProcCall(PS, Ident { name: "c", namespace: vec![] },
+                    vec![]),
+                Expr::Binop(PS, Binop::Add,
+                    Box::new(Expr::Lit(PS, Literal::Int(1))),
+                    Box::new(Expr::Lit(PS, Literal::Int(2))))
+            ])))
     }
 
     #[test]
@@ -841,34 +892,36 @@ mod tests {
                     RETURN 7
                 END
                 "),
-        Ok(TopLevel::ProcDecl((PS, Ident {name: "foo", namespace: vec!["bar"]}),
-                vec![
-                    (Type::I32, vec![(PS, "a"), (PS, "b")]),
-                    (Type::F64, vec![(PS, "c")])],
-                Type::I32, Some("exp"),
-                vec![
-                    ProcDeclBlock::Var(vec![
-                        (Type::I32, vec![(PS, "foo", None)]),
-                    ]),
-                    ProcDeclBlock::Const(vec![
-                        (PS, "bar", Expr::Lit(PS, Literal::Int(1)))
-                    ]),
-                    ProcDeclBlock::Var(vec![
-                        (Type::I64, vec![(PS, "baz", None)]),
-                    ]),
-                ], vec![
-                    Stmt::Assign(LeftValue::Ident(PS,
-                                     Ident { name: "foo", namespace: vec![] }),
-                        Expr::Lit(PS, Literal::Int(3))),
-                    Stmt::Return(PS, Expr::Lit(PS, Literal::Int(7)))
-                ])));
+        Ok(TopLevel::ProcDecl((PS,
+            Ident {name: "foo", namespace: vec!["bar"]}),
+            vec![
+                (Type::I32, vec![(PS, "a"), (PS, "b")]),
+                (Type::F64, vec![(PS, "c")])],
+            Type::I32, Some("exp"),
+            vec![
+                ProcDeclBlock::Var(vec![
+                    (Type::I32, vec![(PS, "foo", None)]),
+                ]),
+                ProcDeclBlock::Const(vec![
+                    (PS, "bar", Expr::Lit(PS, Literal::Int(1)))
+                ]),
+                ProcDeclBlock::Var(vec![
+                    (Type::I64, vec![(PS, "baz", None)]),
+                ]),
+            ], vec![
+                Stmt::Assign(LeftValue::Ident(PS,
+                                 Ident { name: "foo", namespace: vec![] }),
+                    Expr::Lit(PS, Literal::Int(3))),
+                Stmt::Return(PS, Expr::Lit(PS, Literal::Int(7)))
+            ])));
 
         assert_eq!(parse_str_top_level("PROC foo DO i := 1 END"),
-        Ok(TopLevel::ProcDecl((PS, Ident {name: "foo", namespace: vec![]}),
-                vec![], Type::Void, None, vec![], vec![
-                    Stmt::Assign(LeftValue::Ident(PS,
-                                     Ident { name: "i", namespace: vec![] }),
-                        Expr::Lit(PS, Literal::Int(1)))
-                ])))
+        Ok(TopLevel::ProcDecl((PS,
+            Ident {name: "foo", namespace: vec![]}),
+            vec![], Type::Void, None, vec![], vec![
+                Stmt::Assign(LeftValue::Ident(PS,
+                                 Ident { name: "i", namespace: vec![] }),
+                    Expr::Lit(PS, Literal::Int(1)))
+            ])))
     }
 }
