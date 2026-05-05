@@ -181,7 +181,7 @@ where
 
             // PARENTHESISED
             exp.clone().delimited_by(just(Token::LRound), just(Token::RRound)),
-           
+
             // PROC CALL
             ident()
                 .then(
@@ -202,10 +202,9 @@ where
         let raw_access = end_node.clone().foldl_with(
             accessor(exp.clone())
             .repeated(),
-            |lhs, access, e|
-            Expr::Access(
-                if !cfg!(test) {e.span()} else {PS},
-                Box::new(lhs), Box::new(access))
+            |lhs, accesses, e|
+            Expr::Access(if !cfg!(test) {e.span()} else {PS},
+                         Box::new(lhs), Box::new(accesses))
         ).boxed();
 
         let unop = choice((
@@ -265,8 +264,8 @@ where
             none_of([
                 Token::Semicolon, Token::End, Token::Comma, Token::Do,
                 Token::To, Token::Downto, Token::Until, Token::Step,
-                Token::LRound, Token::RRound, Token::Const, Token::Var,
-                Token::Static
+                Token::LRound, Token::RRound, Token::RSquare,
+                Token::Const, Token::Var, Token::Static, Token::Assign
             ])
             .repeated()
             .at_least(1);
@@ -302,58 +301,33 @@ where
 }
 
 
-fn bare_left_value<'tokens, 'src: 'tokens, I>(
-) -> impl Parser<'tokens, I, LeftValue<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
-where
-    I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
-{
-    let exp = expr().boxed();
-
-    choice((
-        ident().map_with(|i, e|
-            LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
-
-        exp.clone().then(accessor(exp))
-            .map_with(|(exp, acc), e|
-                LeftValue::Access(if !cfg!(test) {e.span()} else {PS},
-                                  exp, acc)),
-    ))
-}
-
-
 fn left_value<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, LeftValue<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    let garbage = none_of([Token::Assign, Token::Semicolon, Token::End])
-        .repeated()
-        .at_least(1);
-
-    // see expr()
-    choice((
-        // valid expression with trailing garbage
-        bare_left_value()
-            .ignore_then(garbage.clone())
-            .validate(|_, e, emitter| {
+    expr()
+    .validate(|exp, e, emitter| {
+        match exp {
+            Expr::Ident(span, ident) => LeftValue::Ident(span, ident),
+            Expr::Access(span, boxed_exp, boxed_acc)
+                => LeftValue::Access(span, *boxed_exp, *boxed_acc),
+            Expr::Malformed => LeftValue::Malformed,
+            _ => {
                 emitter.emit(Rich::custom(
                     if !cfg!(test) {e.span()} else {PS},
-                    "Malformed left value"));
+                    "Invalid left value"));
                 LeftValue::Malformed
-            }),
+            }
+        }
+    })
+        // exp.then(accessor(exp))
+        //     .map_with(|(exp, acc), e|
+        //         LeftValue::Access(if !cfg!(test) {e.span()} else {PS},
+        //                           exp, acc)),
 
-        // valid expression
-        bare_left_value(),
-
-        // leading garbage
-        garbage
-            .validate(|_, e, emitter| {
-                emitter.emit(Rich::custom(
-                    if !cfg!(test) {e.span()} else {PS},
-                    "Malformed expression"));
-                LeftValue::Malformed
-            }),
-    ))
+        // ident().map_with(|i, e|
+        //     LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
 }
 
 
@@ -776,16 +750,22 @@ mod tests {
 
     #[test]
     fn raw_accessor() {
-        assert_eq!(parse_str_stmt("a[3] := 7"),
+        assert_eq!(parse_str_stmt("a[4][2] := 0"),
         Ok(Stmt::Assign(
             LeftValue::Access(PS,
-                Expr::Ident(PS, Ident { name: "a", namespace: vec![] }),
+                Expr::Access(PS,
+                    Box::new(Expr::Ident(PS, Ident { name: "a", namespace: vec![] })),
+                    Box::new(Accessor {
+                        typ: Type::I32,
+                        offset_len: 4,
+                        offset: Expr::Lit(PS, Literal::Int(4))
+                    })),
                 Accessor {
                     typ: Type::I32,
                     offset_len: 4,
-                    offset: Expr::Lit(PS, Literal::Int(3))
+                    offset: Expr::Lit(PS, Literal::Int(2))
                  }),
-            Expr::Lit(PS, Literal::Int(7)))));
+            Expr::Lit(PS, Literal::Int(0)))));
 
         assert_eq!(parse_str_expr("a[3] + b[I32:2][F64:2:1]"),
         Ok(Expr::Binop(PS, Binop::Add,
@@ -800,14 +780,14 @@ mod tests {
                 Box::new(Expr::Access(PS,
                     Box::new(Expr::Ident(PS, Ident { name: "b", namespace: vec![] })),
                     Box::new(Accessor {
-                        typ: Type::F64,
-                        offset_len: 2,
-                        offset: Expr::Lit(PS, Literal::Int(1))
+                        typ: Type::I32,
+                        offset_len: 4,
+                        offset: Expr::Lit(PS, Literal::Int(2))
                     }))),
                 Box::new(Accessor {
-                    typ: Type::I32,
-                    offset_len: 4,
-                    offset: Expr::Lit(PS, Literal::Int(2))
+                    typ: Type::F64,
+                    offset_len: 2,
+                    offset: Expr::Lit(PS, Literal::Int(1))
                 }))))))
     }
 
