@@ -94,7 +94,7 @@ where
         .at_least(1)
         .collect::<Vec<_>>()
         .map(|mut parts| {
-            let name = parts.remove(0); // safe: at_least(1)
+            let name = parts.pop().unwrap(); // safe: at_least(1)
             Ident { name, namespace: parts }
         })
 }
@@ -199,7 +199,17 @@ where
                 Expr::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
         )).boxed();
 
-        let raw_access = end_node.clone().foldl_with(
+        // TODO: determine if raw or named access should have precedence
+
+        let named_access =
+            ident().then_ignore(just(Token::Pipe)).repeated()
+            .foldr_with(end_node, |idnt, rhs, e|
+                Expr::NamedAccess(
+                    if !cfg!(test) {e.span()} else {PS},
+                    Box::new(rhs), idnt
+                ));
+
+        let raw_access = named_access.foldl_with(
             accessor(exp.clone())
             .repeated(),
             |lhs, accesses, e|
@@ -312,6 +322,8 @@ where
             Expr::Ident(span, ident) => LeftValue::Ident(span, ident),
             Expr::RawAccess(span, boxed_exp, boxed_acc)
                 => LeftValue::RawAccess(span, *boxed_exp, *boxed_acc),
+            Expr::NamedAccess(span, boxed_exp, idnt)
+                => LeftValue::NamedAccess(span, *boxed_exp, idnt),
             Expr::Malformed => LeftValue::Malformed,
             _ => {
                 emitter.emit(Rich::custom(
@@ -757,7 +769,7 @@ mod tests {
         fn basic_idents() {
         assert_eq!(parse_str_expr("a.b.c + ni"),
         Ok(Expr::Binop(PS, Binop::Add,
-            Box::new(Expr::Ident(PS, Ident { name: "a",  namespace: vec!["b", "c"] })),
+            Box::new(Expr::Ident(PS, Ident { name: "c",  namespace: vec!["a", "b"] })),
             Box::new(Expr::Ident(PS, Ident { name: "ni", namespace: vec![] })))))
     }
 
@@ -819,6 +831,23 @@ mod tests {
                     offset_len: 2,
                     offset: Expr::Lit(PS, Literal::Int(1))
                 }))))))
+    }
+
+    #[test]
+    fn named_accessor() {
+        assert_eq!(parse_str_stmt("a.b|c := 0"),
+        Ok(Stmt::Assign(
+            LeftValue::NamedAccess(PS,
+                Expr::Ident(PS, Ident { name: "c", namespace: vec![] }),
+                Ident { name: "b", namespace: vec!["a"] }),
+            Expr::Lit(PS, Literal::Int(0)))));
+
+        assert_eq!(parse_str_expr("a.b | c | e"),
+        Ok(Expr::NamedAccess(PS,
+            Box::new(Expr::NamedAccess(PS,
+                Box::new(Expr::Ident(PS, Ident { name: "e", namespace: vec![] })),
+                Ident { name: "c", namespace: vec![] })),
+            Ident { name: "b", namespace: vec!["a"] })))
     }
 
     #[test]
@@ -890,7 +919,7 @@ mod tests {
     #[test]
     fn proc_call() {
         assert_eq!(parse_str_expr("a.b(c(), 1+2)"),
-        Ok(Expr::ProcCall(PS, Ident { name: "a", namespace: vec!["b"] },
+        Ok(Expr::ProcCall(PS, Ident { name: "b", namespace: vec!["a"] },
             vec![
                 Expr::ProcCall(PS, Ident { name: "c", namespace: vec![] },
                     vec![]),
