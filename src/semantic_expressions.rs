@@ -232,7 +232,7 @@ pub fn expr2ir<'a>(
         }
 
         // ACCESSORS
-        Expr::Access(span, exp, access) => {
+        Expr::RawAccess(span, exp, access) => {
             let offset_exp =
                 Expr::Binop(*span, Binop::Add,
                      exp.clone(), // already boxed
@@ -253,6 +253,10 @@ pub fn expr2ir<'a>(
             ir.extend(ir_resolve_types((ret_type, IR::Load(access.typ.clone())),
                                        expects, span, source_name, source));
             ir
+        }
+
+        Expr::NamedAccess(_span, _exp, _access) => {
+            todo!()
         }
 
         // Malformed expressions, errors are already reported by the parser
@@ -310,7 +314,7 @@ pub fn left_value2ir<'a>(
             }
         }
 
-        LeftValue::Access(span, exp, access) => {
+        LeftValue::RawAccess(span, exp, access) => {
             let offset_exp =
                 Expr::Binop(*span, Binop::Add,
                      Box::new(exp.clone()),
@@ -326,6 +330,10 @@ pub fn left_value2ir<'a>(
 
             ir.push((write_type.clone(), IR::Store(access.typ.clone())));
             (ir, write_type)
+        }
+
+        LeftValue::NamedAccess(_span, _exp, _access) => {
+            todo!()
         }
 
         LeftValue::Malformed => {

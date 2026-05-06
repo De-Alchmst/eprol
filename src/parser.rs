@@ -203,7 +203,7 @@ where
             accessor(exp.clone())
             .repeated(),
             |lhs, accesses, e|
-            Expr::Access(if !cfg!(test) {e.span()} else {PS},
+            Expr::RawAccess(if !cfg!(test) {e.span()} else {PS},
                          Box::new(lhs), Box::new(accesses))
         ).boxed();
 
@@ -310,8 +310,8 @@ where
     .validate(|exp, e, emitter| {
         match exp {
             Expr::Ident(span, ident) => LeftValue::Ident(span, ident),
-            Expr::Access(span, boxed_exp, boxed_acc)
-                => LeftValue::Access(span, *boxed_exp, *boxed_acc),
+            Expr::RawAccess(span, boxed_exp, boxed_acc)
+                => LeftValue::RawAccess(span, *boxed_exp, *boxed_acc),
             Expr::Malformed => LeftValue::Malformed,
             _ => {
                 emitter.emit(Rich::custom(
@@ -673,6 +673,16 @@ where
             .map(|(nmsp, body)|
                 TopLevel::ConstDecl(nmsp, body)),
 
+        // ACCESSOR
+        just(Token::Accessor)
+            .ignore_then(name_optional_namespace_declare())
+            .then(accessor(expr().boxed()))
+            .map_with(|(ident, acc), e|
+                TopLevel::AccessorDecl(
+                    if !cfg!(test) {e.span()} else {PS},
+                    ident, acc
+                )),
+
         // PROC
         just(Token::Proc)
             .ignore_then(name_optional_namespace_declare())
@@ -772,8 +782,8 @@ mod tests {
     fn raw_accessor() {
         assert_eq!(parse_str_stmt("a[4][I32::2] := 0"),
         Ok(Stmt::Assign(
-            LeftValue::Access(PS,
-                Expr::Access(PS,
+            LeftValue::RawAccess(PS,
+                Expr::RawAccess(PS,
                     Box::new(Expr::Ident(PS, Ident { name: "a", namespace: vec![] })),
                     Box::new(Accessor {
                         typ: Type::I32,
@@ -789,15 +799,15 @@ mod tests {
 
         assert_eq!(parse_str_expr("a[3] + b[I32:2][F64:2:1]"),
         Ok(Expr::Binop(PS, Binop::Add,
-            Box::new(Expr::Access(PS,
+            Box::new(Expr::RawAccess(PS,
                 Box::new(Expr::Ident(PS, Ident { name: "a", namespace: vec![] })),
                 Box::new(Accessor {
                     typ: Type::I32,
                     offset_len: 4,
                     offset: Expr::Lit(PS, Literal::Int(3))
                 }))),
-            Box::new(Expr::Access(PS,
-                Box::new(Expr::Access(PS,
+            Box::new(Expr::RawAccess(PS,
+                Box::new(Expr::RawAccess(PS,
                     Box::new(Expr::Ident(PS, Ident { name: "b", namespace: vec![] })),
                     Box::new(Accessor {
                         typ: Type::I32,
@@ -809,6 +819,18 @@ mod tests {
                     offset_len: 2,
                     offset: Expr::Lit(PS, Literal::Int(1))
                 }))))))
+    }
+
+    #[test]
+    fn accessor_decl() {
+        assert_eq!(parse_str_top_level("ACCESSOR a : b [I32:2]"),
+        Ok(TopLevel::AccessorDecl(PS,
+            Ident { name: "a", namespace: vec!["b"] },
+            Accessor {
+                typ: Type::I32,
+                offset_len: 4,
+                offset: Expr::Lit(PS, Literal::Int(2))
+            })));
     }
 
     #[test]

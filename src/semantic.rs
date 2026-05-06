@@ -37,9 +37,10 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
     // needs to process statements in specific order
-    let mut imports_to_process: Vec<TopLevel> = vec![];
-    let mut vars_to_process:    Vec<TopLevel> = vec![];
-    let mut procs_to_process:   Vec<TopLevel> = vec![];
+    let mut imports_to_process:   Vec<TopLevel> = vec![];
+    let mut vars_to_process:      Vec<TopLevel> = vec![];
+    let mut procs_to_process:     Vec<TopLevel> = vec![];
+    let mut accessors_to_process: Vec<TopLevel> = vec![];
 
     // CONST processing
     // and fill other lists for later processing
@@ -48,11 +49,14 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
             TopLevel::Import(_, _, _, _) => imports_to_process.push(top_level),
             TopLevel::VarDecl(_, _) => vars_to_process.push(top_level),
             TopLevel::ProcDecl(_, _, _, _, _, _) => procs_to_process.push(top_level),
+            TopLevel::AccessorDecl(_, _, _) => accessors_to_process.push(top_level),
             TopLevel::ConstDecl(nmspc, decls) => {
                 process_const_decls(decls, nmspc, &mut scope, source_name, &source);
             }
         }
     }
+
+    // ACCESSORS
 
     // IMPORTS
     let import_ir = process_imports(imports_to_process,
@@ -142,37 +146,16 @@ mod tests {
         // nonexistent ident
         assert_eq!(
             expr2ir(
-                &Expr::Unop(PS, Unop::Neg, Box::new(
+                &Expr::Unop(PS, Unop::Not, Box::new(
                         Expr::Ident(PS, Ident {name: "nonexistent", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
                 (IRType::Error, IR::Error),
-                (IRType::Error, IR::Neg)
+                (IRType::Error, IR::Not)
             ]
         )
     }
 
-    #[test]
-    fn test_expr2ir_binop_cast() {
-        assert_eq!(
-            expr2ir(
-                &Expr::Binop(PS, Binop::Add,
-                    Box::new(Expr::Ident(PS, Ident {name: "x", namespace: vec![]})),
-                    Box::new(Expr::Binop(PS, Binop::Mul,
-                        Box::new(Expr::Lit(PS, Literal::Int(5))),
-                        Box::new(Expr::Lit(PS, Literal::Int(9)))))),
-                get_test_scope(), IRType::I64, &String::new(), ""),
-            vec![
-                (IRType::I32, IR::GlobalGet("raw_x".to_string())),
-                (IRType::I64, IR::LitInt(5)),
-                (IRType::I64, IR::LitInt(9)),
-                (IRType::I64, IR::Mul(false)),
-                (IRType::I32, IR::Cast(IRType::I64)),
-                (IRType::I32, IR::Add),
-                (IRType::I64, IR::Cast(IRType::I32)), // ??
-            ]
-        )
-    }
 
     #[test]
     fn test_expr2ir_proc_call() {

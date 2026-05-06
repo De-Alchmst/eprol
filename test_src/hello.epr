@@ -21,7 +21,7 @@ END
 PROC start
 EXPORT "start"
 DO
-  (* length is stored as single I32 before string 
+  (* length is stored as s ingle I32 before string 
      so we trim " FOO BAR BAZ" *)
   world[-1] := 6
 END

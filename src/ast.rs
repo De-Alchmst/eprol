@@ -67,14 +67,16 @@ pub enum Expr<'a> {
     Binop(SimpleSpan, Binop, Box<Expr<'a>>, Box<Expr<'a>>),
     Ident(SimpleSpan, Ident<'a>),
     ProcCall(SimpleSpan, Ident<'a>, Vec<Expr<'a>>),
-    Access(SimpleSpan, Box<Expr<'a>>, Box<Accessor<'a>>),
+    RawAccess(SimpleSpan, Box<Expr<'a>>, Box<Accessor<'a>>),
+    NamedAccess(SimpleSpan, Box<Expr<'a>>, Ident<'a>),
     Malformed,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LeftValue<'a> {
     Ident(SimpleSpan, Ident<'a>),
-    Access(SimpleSpan, Expr<'a>, Accessor<'a>),
+    RawAccess(SimpleSpan, Expr<'a>, Accessor<'a>),
+    NamedAccess(SimpleSpan, Expr<'a>, Ident<'a>),
     Malformed
 }
 
@@ -106,6 +108,7 @@ pub enum TopLevel<'a> {
     ProcDecl((SimpleSpan, Ident<'a>), Vec<ProcArgs<'a>>, Type, Option<&'a str>, Vec<ProcDeclBlock<'a>>, Vec<Stmt<'a>>),
     // outer name, inner name, type
     Import(SimpleSpan, Vec<&'a str>, Ident<'a>, Type),
+    AccessorDecl(SimpleSpan, Ident<'a>, Accessor<'a>),
 }
 
 pub type Program<'a> = Vec<TopLevel<'a>>;
@@ -118,7 +121,8 @@ pub fn expr2span(expr: &Expr) -> SimpleSpan {
         Expr::Binop(span, _, _, _) |
         Expr::Ident(span, _) |
         Expr::ProcCall(span, _, _) |
-        Expr::Access(span, _, _) => *span,
+        Expr::RawAccess(span, _, _) |
+        Expr::NamedAccess(span, _, _) => *span,
         Expr::Malformed => PS,
     }
 }
