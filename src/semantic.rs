@@ -10,6 +10,7 @@ use crate::{
         process_const_decls,
         process_var_decls,
         process_proc_decls,
+        process_accessors,
     },
     semantic_types::{
         Scope,
@@ -57,6 +58,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     }
 
     // ACCESSORS
+    process_accessors(accessors_to_process, &mut scope, source_name, &source);
 
     // IMPORTS
     let import_ir = process_imports(imports_to_process,

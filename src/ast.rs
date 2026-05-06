@@ -10,6 +10,13 @@ pub struct Ident<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct Accessor<'a> {
+    pub typ: Type,
+    pub offset_len: i64,
+    pub offset: Expr<'a>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     I32, I64,
     F32, F64,
@@ -17,13 +24,6 @@ pub enum Type {
     Void,
     // args, return
     Proc(Vec<Type>, Box<Type>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Accessor<'a> {
-    pub typ: Type,
-    pub offset_len: i64,
-    pub offset: Expr<'a>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

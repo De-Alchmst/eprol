@@ -126,6 +126,16 @@ pub fn expr2ir<'a>(
                     vec![(IRType::Error, IR::Error)]
                 }
 
+                // accessor -> cannot use accessors as values
+                ScopeItem::Accessor(_, _) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Invalid identifier",
+                        format!("Cannot use accessor `{}` as value", idnt.name)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
+
                 // not found -> error
                 ScopeItem::None => {
                     report_semantic_error(
@@ -211,7 +221,8 @@ pub fn expr2ir<'a>(
                     ir
                 }
 
-                ScopeItem::Const(_) | ScopeItem::Var(_, _, _) => {
+                ScopeItem::Const(_) | ScopeItem::Var(_, _, _) |
+                ScopeItem::Accessor(_, _) => {
                     report_semantic_error(
                         span, source_name, source,
                         "Not a procedure",
@@ -255,8 +266,42 @@ pub fn expr2ir<'a>(
             ir
         }
 
-        Expr::NamedAccess(_span, _exp, _access) => {
-            todo!()
+        Expr::NamedAccess(span, exp, access) => {
+            let val = scope.search(access);
+            match val {
+                // just pass to RawAccess handler
+                ScopeItem::Accessor(typ, offset) => {
+                    let access_exp =
+                        Expr::RawAccess(*span,
+                            exp.clone(), // already boxed
+                            Box::new(Accessor {
+                                typ: typ,
+                                offset_len: offset,
+                                offset: Expr::Lit(*span, Literal::Int(1))
+                            }));
+
+                    expr2ir(&access_exp, scope, expects, source_name, source)
+                }
+
+                ScopeItem::Const(_) | ScopeItem::Var(_, _, _) |
+                ScopeItem::Proc(_, _, _) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Not an accessor",
+                        format!("Identifier `{}` is not an accessor", access.name)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
+
+                ScopeItem::None => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Unknown identifier",
+                        format!("Identifier `{}` not found in scope", access.name)
+                    );
+                    vec![(IRType::Error, IR::Error)]
+                }
+            }
         }
 
         // Malformed expressions, errors are already reported by the parser
@@ -293,11 +338,21 @@ pub fn left_value2ir<'a>(
                 }
 
                 // proc
-                ScopeItem::Proc(_raw_name, _arg_types, _ret_type) => {
+                ScopeItem::Proc(_, _, _) => {
                     report_semantic_error(
                         span, source_name, source,
                         "Invalid left value",
                         "Cannot assign to procedure".to_string()
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+
+                // accessor
+                ScopeItem::Accessor(_, _) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Invalid left value",
+                        "Cannot assign to accessor".to_string()
                     );
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
                 }
@@ -332,8 +387,42 @@ pub fn left_value2ir<'a>(
             (ir, write_type)
         }
 
-        LeftValue::NamedAccess(_span, _exp, _access) => {
-            todo!()
+        LeftValue::NamedAccess(span, exp, access) => {
+            let val = scope.search(access);
+            match val {
+                // just pass to RawAccess handler
+                ScopeItem::Accessor(typ, offset) => {
+                    let access_exp =
+                        LeftValue::RawAccess(*span,
+                            exp.clone(), // already boxed
+                            Accessor {
+                                typ: typ,
+                                offset_len: offset,
+                                offset: Expr::Lit(*span, Literal::Int(1))
+                            });
+
+                    left_value2ir(&access_exp, scope, source_name, source)
+                }
+
+                ScopeItem::Const(_) | ScopeItem::Var(_, _, _) |
+                ScopeItem::Proc(_, _, _) => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Not an accessor",
+                        format!("Identifier `{}` is not an accessor", access.name)
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+
+                ScopeItem::None => {
+                    report_semantic_error(
+                        span, source_name, source,
+                        "Unknown identifier",
+                        format!("Identifier `{}` not found in scope", access.name)
+                    );
+                    (vec![(IRType::Error, IR::Error)], IRType::Any)
+                }
+            }
         }
 
         LeftValue::Malformed => {

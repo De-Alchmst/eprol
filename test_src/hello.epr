@@ -1,5 +1,7 @@
 IMPORT "env" "textUtf8" AS textUtf8 (I32 ptr, len, x, y)
 
+ACCESSOR len : s [-1]
+
 VAR (*This is a simple comment*)
 I32 hello := "Hello,",
     world := "world! FOO BAR BAZ",
@@ -23,7 +25,7 @@ EXPORT "start"
 DO
   (* length is stored as s ingle I32 before string 
      so we trim " FOO BAR BAZ" *)
-  world[-1] := 6
+  s.len|world := 6
 END
 
 PROC update
@@ -31,8 +33,8 @@ EXPORT "update"
 I32 hx := 10, hy := 10,
     wx := 20, wy := 40,
 DO
-  textUtf8(hello, hello[-1], hx, hy);
-  textUtf8(world, world[-1], wx, wy);
+  textUtf8(hello, s.len|hello, hx, hy);
+  textUtf8(world, s.len|world, wx, wy);
 END
 
 PROC foo : I32

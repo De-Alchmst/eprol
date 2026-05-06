@@ -1,7 +1,8 @@
 use crate::{
     ir::IRType,
     ast::{
-        Ident
+        Ident,
+        Type,
     }
 };
 
@@ -18,6 +19,7 @@ pub enum LitVal { Int(i64), Float(f64), Str(String) }
 pub enum ScopeItem {
     Var(String, IRType, bool), // raw_name, type, localp
     Const(LitVal), // value
+    Accessor(Type, i64), // type, offset in bytes
     Proc(String, Vec<IRType>, IRType), // raw_name, arg types, return type
     None, // used as a return value
 }

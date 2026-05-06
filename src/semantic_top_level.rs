@@ -62,7 +62,8 @@ pub fn process_imports<'a>(
                 report_semantic_error(
                     &span, source_name, source,
                     "Identifier redeclaration",
-                    format!("Identifier `{}` is already declared in scope", inner.name)
+                    format!("Identifier `{}` is already declared in scope",
+                            inner.name)
                 );
             }
         }
@@ -132,6 +133,45 @@ pub fn process_proc_decls(
     });
 
     return proc_ir;
+}
+
+
+pub fn process_accessors(
+    accessors: Vec<TopLevel>,
+    scope: &mut Scope,
+    source_name: &String,
+    source: &String,
+) {
+    for top_level in accessors {
+        if let TopLevel::AccessorDecl(span, idnt, accessor) = top_level {
+            // if already exists
+            if !matches!(scope.search(&idnt), ScopeItem::None) {
+                report_semantic_error(
+                    &span, source_name, source,
+                    "Identifier redeclaration",
+                    format!("Identifier `{}` is already declared in scope",
+                            idnt.name)
+                );
+                continue;
+            }
+
+            let expr_ir = expr2ir(&accessor.offset, &scope, IRType::I32,
+                                  source_name, source);
+
+            // if expression is literal
+            if let Some(LitVal::Int(val)) = irlist2lit(&expr_ir) {
+                scope.insert(&idnt, ScopeItem::Accessor(accessor.typ,
+                                                        val * accessor.offset_len))
+            } else {
+                report_semantic_error(
+                    &span, source_name, &source,
+                    "Non-literal initializer",
+                    "initializer must be comptime-known value".to_string()
+                );
+            }
+
+        }
+    }
 }
 
 
@@ -323,6 +363,7 @@ fn process_single_const_decl(
             "Identifier redeclaration",
             format!("Identifier `{}` is already declared in scope", name)
         );
+        return;
     }
 
     let expr_ir = expr2ir(&expr, &scope, IRType::Any, source_name, source);
