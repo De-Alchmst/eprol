@@ -222,6 +222,39 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
                 _ => unimplemented!()
             }.to_string(),
 
+        IR::Store(source_typ) =>
+            match typ {
+                IRType::I32 =>
+                    match source_typ {
+                        Type::I8  | Type::U8  => "i32.store8",
+                        Type::I16 | Type::U16 => "i32.load16",
+                        Type::I32 | Type::U32 => "i32.store",
+                        _ => unimplemented!()
+                    }
+
+                IRType::I64 =>
+                    match source_typ {
+                        Type::I8  | Type::U8  => "i64.store8",
+                        Type::I16 | Type::U16 => "i64.store16",
+                        Type::I32 | Type::U32 => "i64.store32",
+                        Type::I64 | Type::U64 => "i64.store",
+                        _ => unimplemented!()
+                    }
+
+                IRType::F32 =>
+                    match source_typ {
+                        Type::F32 => "f32.store",
+                        _ => unimplemented!()
+                    }
+
+                IRType::F64 =>
+                    match source_typ {
+                        Type::F64 => "f64.store",
+                        _ => unimplemented!()
+                    }
+                _ => unimplemented!()
+            }.to_string(),
+
         _ => unimplemented!("{:?}", val)
     }
 }

@@ -33,6 +33,7 @@ pub enum IR {
     LocalGet(String),
     LocalSet(String),
     Load(Type),
+    Store(Type),
     Add,
     Sub,
     // signedp

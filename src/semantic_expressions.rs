@@ -310,8 +310,22 @@ pub fn left_value2ir<'a>(
             }
         }
 
-        LeftValue::Access(_span, _exp, _access) => {
-            todo!("Accessors not implemented yet");
+        LeftValue::Access(span, exp, access) => {
+            let offset_exp =
+                Expr::Binop(*span, Binop::Add,
+                     Box::new(exp.clone()),
+                     Box::new(Expr::Binop(*span, Binop::Mul,
+                         Box::new(Expr::Lit(*span, Literal::Int(access.offset_len))),
+                         Box::new(access.offset.clone()))));
+
+            let mut ir = expr2ir(&offset_exp, scope, IRType::I32,
+                                 source_name, source);
+
+            // what will be written
+            let write_type = asttype2irtype(access.typ.clone());
+
+            ir.push((write_type.clone(), IR::Store(access.typ.clone())));
+            (ir, write_type)
         }
 
         LeftValue::Malformed => {
