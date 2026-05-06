@@ -15,6 +15,7 @@ use crate::{
     },
     semantic_expressions::{
         expr2ir,
+        irlist2lit,
     },
     semantic_statements::{
         stmt2ir,
@@ -435,15 +436,3 @@ fn process_single_var_decls(
         }
     }
 }
-
-
-// extract literal from IRList if possible
-fn irlist2lit(ir: &IRList) -> Option<LitVal> {
-    match ir.last() {
-        Some((_, IR::LitInt(x)))   => Some(LitVal::Int(*x)),
-        Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
-        Some((_, IR::LitStr(s)))   => Some(LitVal::Str(s.clone())),
-        _ => None
-    }
-}
-

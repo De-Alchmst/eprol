@@ -74,14 +74,24 @@ pub fn expr2ir<'a>(
             let inner_type   = irlist_type(&inner_ir);
             match op {
                 Unop::Not => inner_ir.push((inner_type, IR::Not)),
-                // TODO: do unop at comptime with literals
-                Unop::Neg => match inner_type.clone() {
-                    IRType::Float | IRType::F32 | IRType::F64
-                        => inner_ir.push((inner_type, IR::Neg)),
-                    _ /* ints */ => {
-                        // ints don't have .neg, so we do 0 - x instead
-                        inner_ir.insert(0, (inner_type.clone(), IR::LitInt(0)));
-                        inner_ir.push((inner_type, IR::Sub));
+
+                Unop::Neg => {
+                    if let Some(lit_val) = irlist2lit(&inner_ir) {
+                        match lit_val {
+                            LitVal::Int(x) => return vec![(IRType::Int, IR::LitInt(-x))],
+                            LitVal::Float(x) => return vec![(IRType::Float, IR::LitFloat(-x))],
+                            LitVal::Str(_) => {}
+                        }
+                    }
+
+                    match inner_type.clone() {
+                        IRType::Float | IRType::F32 | IRType::F64
+                            => inner_ir.push((inner_type, IR::Neg)),
+                            _ /* ints */ => {
+                                // ints don't have .neg, so we do 0 - x instead
+                                inner_ir.insert(0, (inner_type.clone(), IR::LitInt(0)));
+                                inner_ir.push((inner_type, IR::Sub));
+                            }
                     }
                 }
             }
@@ -432,3 +442,13 @@ pub fn left_value2ir<'a>(
     }
 }
 
+
+// extract literal from IRList if possible
+pub fn irlist2lit(ir: &IRList) -> Option<LitVal> {
+    match ir.last() {
+        Some((_, IR::LitInt(x)))   => Some(LitVal::Int(*x)),
+        Some((_, IR::LitFloat(x))) => Some(LitVal::Float(*x)),
+        Some((_, IR::LitStr(s)))   => Some(LitVal::Str(s.clone())),
+        _ => None
+    }
+}
