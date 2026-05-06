@@ -140,8 +140,7 @@ mod tests {
                         Expr::Ident(PS, Ident {name: "w", namespace: vec!["n"]}))),
                 get_test_scope(), IRType::F32, &String::new(), ""),
             vec![
-                (IRType::F32, IR::LitFloat(3.7)),
-                (IRType::F32, IR::Neg)
+                (IRType::Float, IR::LitFloat(-3.7)),
             ]
         );
 
