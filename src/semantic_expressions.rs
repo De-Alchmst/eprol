@@ -74,8 +74,16 @@ pub fn expr2ir<'a>(
             let inner_type   = irlist_type(&inner_ir);
             match op {
                 Unop::Not => inner_ir.push((inner_type, IR::Not)),
-                // TODO: do unop at compiletime with literals
-                Unop::Neg => inner_ir.push((inner_type, IR::Neg)),
+                // TODO: do unop at comptime with literals
+                Unop::Neg => match inner_type.clone() {
+                    IRType::Float | IRType::F32 | IRType::F64
+                        => inner_ir.push((inner_type, IR::Neg)),
+                    _ /* ints */ => {
+                        // ints don't have .neg, so we do 0 - x instead
+                        inner_ir.insert(0, (inner_type.clone(), IR::LitInt(0)));
+                        inner_ir.push((inner_type, IR::Sub));
+                    }
+                }
             }
             inner_ir
         }
@@ -134,11 +142,12 @@ pub fn expr2ir<'a>(
         // left side determines result type
         // therefor right must match left and the entire outcome must then
         // match expects
-        // TODO:: do binop at compiletime with literals
-        // TODO:: add unsigned support for binops
+        // TODO: do binop at compiletime with literals
+        // TODO: add unsigned support for binops
+        // TODO: consider whether expressions should default to higher percision than `expects`
         Expr::Binop(span, op, left, right) => {
             // evaluate both sides
-            let mut left_ir = expr2ir(left, scope, IRType::Any,
+            let mut left_ir = expr2ir(left, scope, expects.clone(), // IRType::Any,
                                       source_name, source);
             let mut left_type = irlist_type(&left_ir);
             if left_type == IRType::Error { left_type = IRType::Any; }
@@ -159,8 +168,8 @@ pub fn expr2ir<'a>(
                 ir_resolve_types((left_type, match op {
                     Binop::Add => IR::Add,
                     Binop::Sub => IR::Sub,
-                    Binop::Mul => IR::Mul(false),
-                    Binop::Div => IR::Div(false),
+                    Binop::Mul => IR::Mul(true),
+                    Binop::Div => IR::Div(true),
                     _ => {
                         report_semantic_error(
                             span, source_name, source,
@@ -223,8 +232,27 @@ pub fn expr2ir<'a>(
         }
 
         // ACCESSORS
-        Expr::Access(_span, _exp, _access) => {
-            todo!("Accessors not implemented yet");
+        Expr::Access(span, exp, access) => {
+            let offset_exp =
+                Expr::Binop(*span, Binop::Add,
+                     exp.clone(), // already boxed
+                     Box::new(Expr::Binop(*span, Binop::Mul,
+                         Box::new(Expr::Lit(*span, Literal::Int(access.offset_len))),
+                         Box::new(access.offset.clone()))));
+
+            let mut ir = expr2ir(&offset_exp, scope, IRType::I32,
+                                 source_name, source);
+
+            // what will be return by the read
+            let mut ret_type = asttype2irtype(access.typ.clone());
+            // can read directly into i64, no need to cast
+            if expects == IRType::I64 && ret_type == IRType::I32 {
+                ret_type = IRType::I64;
+            }
+
+            ir.extend(ir_resolve_types((ret_type, IR::Load(access.typ.clone())),
+                                       expects, span, source_name, source));
+            ir
         }
 
         // Malformed expressions, errors are already reported by the parser

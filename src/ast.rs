@@ -13,6 +13,7 @@ pub struct Ident<'a> {
 pub enum Type {
     I32, I64,
     F32, F64,
+    I8,  I16, U8, U16, U32, U64,
     Void,
     // args, return
     Proc(Vec<Type>, Box<Type>),
@@ -125,8 +126,10 @@ pub fn expr2span(expr: &Expr) -> SimpleSpan {
 
 pub fn type_len(typ: Type) -> i64 {
     match typ {
-        Type::I32 | Type::F32 => 4,
-        Type::I64 | Type::F64 => 8,
+        Type::I8  | Type::U8  => 1,
+        Type::I16 | Type::U16 => 2,
+        Type::I32 | Type::F32 | Type::U32 => 4,
+        Type::I64 | Type::F64 | Type::U64 => 8,
         Type::Void => 0,
         Type::Proc(_, _) => unreachable!(),
     }

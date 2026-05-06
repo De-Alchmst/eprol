@@ -127,13 +127,13 @@ where
                 // [type:len:count]
                 simple_type()
                     .then_ignore(just(Token::Colon))
-                    .then(possibly_negative_int())
+                    .then(possibly_negative_int().or_not())
                     .then_ignore(just(Token::Colon))
                     .then(exp.clone())
                     .map(|((typ, len), count)|
                         Accessor {
                             typ: typ,
-                            offset_len: len,
+                            offset_len: len.unwrap_or(1),
                             offset: count,
                         }),
 
@@ -321,13 +321,6 @@ where
             }
         }
     })
-        // exp.then(accessor(exp))
-        //     .map_with(|(exp, acc), e|
-        //         LeftValue::Access(if !cfg!(test) {e.span()} else {PS},
-        //                           exp, acc)),
-
-        // ident().map_with(|i, e|
-        //     LeftValue::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
 }
 
 
@@ -411,18 +404,45 @@ where
 }
 
 
+fn access_type<'tokens, 'src: 'tokens, I>(
+) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
+where
+   I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
+ {
+    select!{Token::Type(s) => match s {
+        "I8" |"i8"  => Type::I8,
+        "I16"|"i16" => Type::I16,
+        "I32"|"i32" => Type::I32,
+        "I64"|"i64" => Type::I64,
+        "U8" |"u8"  => Type::U8,
+        "U16"|"u16" => Type::U16,
+        "U32"|"u32" => Type::U32,
+        "U64"|"u64" => Type::I64,
+        "F32"|"f32" => Type::F32,
+        "F64"|"f64" => Type::F64,
+        _ => unreachable!(),
+    }}
+}
+
+
 fn simple_type<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    select!{Token::Type(s) => match s {
-        "I32"|"i32" => Type::I32,
-        "I64"|"i64" => Type::I64,
-        "F32"|"f32" => Type::F32,
-        "F64"|"f64" => Type::F64,
-        _ => unreachable!(),
-    }}
+    access_type()
+        .validate(|typ, e, emmiter| {
+            match typ {
+                Type::I32 | Type::I64 | Type::F32 | Type::F64 => typ,
+                _ => {
+                    emmiter.emit(Rich::custom(
+                        if !cfg!(test) {e.span()} else {PS},
+                        format!("`{:#?}` is not a valid type in this context",
+                               typ)));
+                    Type::I32
+                }
+            }
+        })
 }
 
 
@@ -750,7 +770,7 @@ mod tests {
 
     #[test]
     fn raw_accessor() {
-        assert_eq!(parse_str_stmt("a[4][2] := 0"),
+        assert_eq!(parse_str_stmt("a[4][I32::2] := 0"),
         Ok(Stmt::Assign(
             LeftValue::Access(PS,
                 Expr::Access(PS,
@@ -762,7 +782,7 @@ mod tests {
                     })),
                 Accessor {
                     typ: Type::I32,
-                    offset_len: 4,
+                    offset_len: 1,
                     offset: Expr::Lit(PS, Literal::Int(2))
                  }),
             Expr::Lit(PS, Literal::Int(0)))));

@@ -32,6 +32,7 @@ pub enum IR {
     GlobalSet(String),
     LocalGet(String),
     LocalSet(String),
+    Load(Type),
     Add,
     Sub,
     // signedp
@@ -60,11 +61,12 @@ pub type ImportIRList<'a> = Vec<ImportIR<'a>>;
 
 pub fn asttype2irtype(s: Type) -> IRType {
     match s {
-        Type::I32  => IRType::I32,
-        Type::I64  => IRType::I64,
+        Type::I32 | Type::U32 => IRType::I32,
+        Type::I64 | Type::U64 => IRType::I64,
         Type::F32  => IRType::F32,
         Type::F64  => IRType::F64,
         Type::Void => IRType::Void,
+        Type::I8 | Type::I16 | Type::U8 | Type::U16 => IRType::I32,
         Type::Proc(args, ret) =>
             IRType::Func(args.into_iter().map(asttype2irtype).collect(),
                          Box::new(asttype2irtype(*ret))),

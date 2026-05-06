@@ -13,12 +13,13 @@ fn comment_callback<'a, 'b : 'a>(
     while depth > 0 && remainder.len() > 1 {
         if remainder.starts_with("(*") {
             depth += 1;
-            lex.bump(1); // move past the star to not catch `(*)`
+            lex.bump(2);
         } else if remainder.starts_with("*)") {
             depth -= 1;
+            lex.bump(2);
+        } else {
+            lex.bump(1);
         }
-
-        lex.bump(1);
         remainder = lex.remainder();
     }
 
@@ -118,7 +119,7 @@ pub enum Token<'a> {
     #[token("FALSE")]
     False,
 
-    #[regex(r"[IFUS](8|16|32|64)", priority=20)]
+    #[regex(r"([IU](8|16|32|64))|(F(32|64))", priority=20)]
     Type(&'a str),
 
     #[regex(r"[0-9]+\.[0-9]+", priority=30)]
