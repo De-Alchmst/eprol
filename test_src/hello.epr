@@ -1,6 +1,6 @@
 IMPORT "env" "textUtf8" AS textUtf8 (I32 ptr, len, x, y)
 
-ACCESSOR len : s [-1]
+ACCESSOR len : s [-1+x]
 
 VAR (*This is a simple comment*)
 I32 hello := "Hello,",

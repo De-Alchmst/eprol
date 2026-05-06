@@ -15,11 +15,17 @@ fn set_error_appeared() {
     *error_appeared = true;
 }
 
+// prevents multiple threads reporting at the same time having interwoven output
+static REPORT_MUTEX: Mutex<()> = Mutex::new(());
+
+// TODO: make reports wait for each other when called in paralel
 pub fn report_parser_error<'a>(
     error: Rich<'_, Token<'_>, SimpleSpan>,
     source_name: &'a String,
     source: &'a str,
 ){
+    let _lock = REPORT_MUTEX.lock().unwrap();
+
     set_error_appeared();
     Report::build(ReportKind::Error, (source_name.clone(), error.span().into_range()))
         .with_config(ariadne::Config::new()
@@ -48,6 +54,8 @@ pub fn report_semantic_error<'a>(
     error_title: &'a str,
     error_message: String,
 ){
+    let _lock = REPORT_MUTEX.lock().unwrap();
+
     set_error_appeared();
     Report::build(ReportKind::Error, (source_name.clone(), span.into_range()))
         .with_config(ariadne::Config::new()
