@@ -8,6 +8,8 @@ use chumsky::prelude::{
 };
 use::std::sync::Mutex;
 
+// global state to track if any errors appeared
+// don't bother generating code if errors found, but continue analysing
 static ERROR_APPEARED: Mutex<bool> = Mutex::new(false);
 pub fn error_appeared() -> bool { *ERROR_APPEARED.lock().unwrap() }
 fn set_error_appeared() {
@@ -18,7 +20,6 @@ fn set_error_appeared() {
 // prevents multiple threads reporting at the same time having interwoven output
 static REPORT_MUTEX: Mutex<()> = Mutex::new(());
 
-// TODO: make reports wait for each other when called in paralel
 pub fn report_parser_error<'a>(
     error: Rich<'_, Token<'_>, SimpleSpan>,
     source_name: &'a String,

@@ -125,14 +125,14 @@ where
         .ignore_then(
             choice((
                 // [type:len:count]
-                simple_type()
+                simple_type().or_not()
                     .then_ignore(just(Token::Colon))
                     .then(possibly_negative_int().or_not())
                     .then_ignore(just(Token::Colon))
                     .then(exp.clone())
                     .map(|((typ, len), count)|
                         Accessor {
-                            typ: typ,
+                            typ: typ.unwrap_or(Type::I32),
                             offset_len: len.unwrap_or(1),
                             offset: count,
                         }),
