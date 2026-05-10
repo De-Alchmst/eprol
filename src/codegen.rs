@@ -21,21 +21,18 @@ pub fn print_import_ir(lst: &ImportIRList) {
         {
             match typ {
                 IRType::Func(arg_types, ret_type) => {
-                    println!(" (import {} (func {} (param {}) {}))",
+                    println!(" (import {} (func {raw_name} (param {}) {}))",
                         outer_name.iter().map(|s| format!("\"{}\"", s))
                                   .collect::<Vec<String>>().join(" "),
-                        raw_name,
                         arg_types.iter().map(|t| t.to_string())
                                  .collect::<Vec<String>>().join(" "),
                         irtype_to_return(&*ret_type))
                 },
 
                 _ => {
-                    println!(" (global {} (import {}) (mut {}))",
-                        raw_name,
+                    println!(" (global {raw_name} (import {}) (mut {typ}))",
                         outer_name.iter().map(|s| format!("\"{}\"", s))
-                                  .collect::<Vec<String>>().join(" "),
-                        typ)
+                                  .collect::<Vec<String>>().join(" "))
                 }
             }
         }
@@ -43,6 +40,7 @@ pub fn print_import_ir(lst: &ImportIRList) {
 }
 
 
+// memory declaration
 pub fn print_memory(pages: i32, import: Vec<&str>) {
     let import_str = if import.len() > 0 {
         format!(" (import {})",
@@ -51,19 +49,23 @@ pub fn print_memory(pages: i32, import: Vec<&str>) {
     } else {
         String::from("")
     };
-    println!(" (memory {} {})", import_str, pages);
+    println!(" (memory {import_str} {pages})");
 }
 
 
+// map data-chunk -> data-address
 static DATA_INFO: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
 fn get_data_info<'a>() -> &'static Mutex<HashMap<String, u32>> {
     DATA_INFO.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+// print u32 as string
 fn u32_to_hex_escapes(value: u32) -> String {
     value.to_le_bytes().iter().map(|b| format!("\\{:02x}", b)).collect()
 }
 
+// data defined as strings.
+// data in 'lst' are unique
 // TODO: escape strings
 pub fn print_data(mut data_top: u32, lst: Vec<String>) {
     let mut data_info = get_data_info().lock().unwrap();
@@ -84,20 +86,20 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
         match ir {
             TopLevelIR::GlobalVar(raw_name, val) => {
                 let (typ, _) = val;
-                println!(" (global {} (mut {}) {})",
-                         raw_name, typ, ir_to_str(val))
+                // everything is mutable!
+                println!(" (global {raw_name} (mut {typ}) {})",
+                         ir_to_str(val))
             },
 
             TopLevelIR::Proc(raw_name, args, ret_type, export, locals, body) => {
                 let export = if let Some(s) = export {
-                    format!(" (export \"{}\")", s)
+                    format!(" (export \"{s}\")")
                 } else {
                     String::from("")
                 };
-                println!("\n (func {}{} {} {}\n   {}",
-                         raw_name, export,
+                println!("\n (func {raw_name}{export} {} {}\n   {}",
                          args.iter().map(|(name, typ)|
-                             format!("(param {} {})", name, typ))
+                             format!("(param {name} {typ})"))
                              .collect::<Vec<String>>().join(" "),
                          irtype_to_return(ret_type),
                          locals.iter()
@@ -113,10 +115,11 @@ pub fn print_top_level_ir(lst: &TopLevelIRList) {
     }
 }
 
+// return definition, or nothing if ITRype::Void
 fn irtype_to_return(typ: &IRType) -> String {
     match typ {
         IRType::Void => String::from(""),
-        _ => format!("(result {})", typ)
+        _ => format!("(result {typ})")
     }
 }
 
@@ -134,7 +137,7 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
         IR::Add => format!("{typ}.add"),
         IR::Sub => format!("{typ}.sub"),
         IR::Mul(_signedp) => format!("{typ}.mul"),
-        IR::Div(signedp) => format!("{typ}.add_{}", if *signedp {"s"} else {"u"}),
+        IR::Div(signedp) => format!("{typ}.div_{}", if *signedp {"s"} else {"u"}),
         IR::Return => format!("return"),
 
         IR::LitStr(s) =>
@@ -145,7 +148,7 @@ fn ir_to_str(ir: &(IRType, IR)) -> String {
             match typ {
                 IRType::F32 | IRType::F64 => format!("{typ}.neg"),
                 _ => unimplemented!()
-        }
+            }
 
         IR::Cast(source_type) =>
             match source_type {

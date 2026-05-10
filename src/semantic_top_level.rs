@@ -38,35 +38,36 @@ pub fn process_imports<'a>(
 
     for top_level in imports {
         if let TopLevel::Import(span, outer, inner, typ) = top_level {
-            if matches!(scope.search(&inner), ScopeItem::None) {
-                let typ = asttype2irtype(typ);
-                let raw_name = raw_name(&inner, source_name);
-                
-                match typ.clone() {
-                    IRType::Func(arg_types, ret_type) => {
-                        scope.insert(&inner, ScopeItem::Proc(raw_name.clone(),
-                                     arg_types, *ret_type));
-                    },
-
-                    IRType::I32 | IRType::I64 | IRType::F32 | IRType::F64 => {
-                        scope.insert(&inner, ScopeItem::Var(raw_name.clone(),
-                                     typ.clone(), false));
-                    },
-                    
-                    // void
-                    _ => unreachable!()
-                }
-
-                import_ir.push((outer, raw_name, typ));
-
-            } else {
+            // if already exists
+            if !matches!(scope.search(&inner), ScopeItem::None) {
                 report_semantic_error(
                     &span, source_name, source,
                     "Identifier redeclaration",
                     format!("Identifier `{}` is already declared in scope",
                             inner.name)
                 );
+                continue;
             }
+
+            let typ = asttype2irtype(typ);
+            let raw_name = raw_name(&inner, source_name);
+            
+            match typ.clone() {
+                IRType::Func(arg_types, ret_type) => {
+                    scope.insert(&inner, ScopeItem::Proc(raw_name.clone(),
+                                 arg_types, *ret_type));
+                },
+
+                IRType::I32 | IRType::I64 | IRType::F32 | IRType::F64 => {
+                    scope.insert(&inner, ScopeItem::Var(raw_name.clone(),
+                                 typ.clone(), false));
+                },
+                
+                // void
+                _ => unreachable!()
+            }
+
+            import_ir.push((outer, raw_name, typ));
         }
     }
 
@@ -120,6 +121,7 @@ pub fn process_proc_decls(
     // this is to allow for recursive and mutually recursive procs
     register_procs(&procs, scope, source_name, source);
 
+    // proc bodies can be processed in parallel
     thread::scope(|s| {
         let mut handles = vec![];
 
@@ -161,8 +163,9 @@ pub fn process_accessors(
 
             // if expression is literal
             if let Some(LitVal::Int(val)) = irlist2lit(&expr_ir) {
-                scope.insert(&idnt, ScopeItem::Accessor(accessor.typ,
-                                                        val * accessor.offset_len))
+                scope.insert(&idnt,
+                             ScopeItem::Accessor(accessor.typ,
+                                                 val * accessor.offset_len))
             } else {
                 report_semantic_error(
                     &span, source_name, &source,
@@ -170,7 +173,6 @@ pub fn process_accessors(
                     "initializer must be comptime-known value".to_string()
                 );
             }
-
         }
     }
 }
@@ -212,12 +214,12 @@ fn register_procs(
             }
 
             scope.insert(&idnt, ScopeItem::Proc(raw_name.clone(),
-                         proc_args, ret_type.clone()));
+                                                proc_args, ret_type.clone()));
         }
     }
 }
 
-
+// process the body of a procedure, header is already defined
 fn process_proc_decl_body(
     top_level: TopLevel,
     scope: &Scope,
@@ -225,6 +227,8 @@ fn process_proc_decl_body(
     source: &String,
 ) -> TopLevelIR {
     // rust still thinks it can be whatever
+    // I could not find a more elegant solution that is not `if let`
+    // and I don't want to raise indent more than necessary
     let (span_idnt, args, ret_type, export, decls, body) =
         match top_level {
             TopLevel::ProcDecl(span_idnt, args, ret_type, export, decls, body)
@@ -237,8 +241,7 @@ fn process_proc_decl_body(
     let ret_type = asttype2irtype(ret_type);
 
     // will fork scope for local proc
-    // will allow shadowing, but `local_set` used to prevent duplicate
-    // idents within the function scope first one does n
+    // will allow shadowing, but `local_set` used to prevent duplicates
     let mut local_scope = scope.clone();
     let mut local_set: HashSet<String> = HashSet::new();
     let mut proc_args: Vec<(String, IRType)> = vec![];
@@ -249,20 +252,20 @@ fn process_proc_decl_body(
         for (span, name) in names {
             let raw_arg_name = raw_arg_name(name, &raw_name);
 
-            // if doesn't exist yet
-            if !local_set.contains(&raw_arg_name.clone()) {
-                local_set.insert(raw_arg_name.clone());
-                proc_args.push((raw_arg_name.clone(), typ.clone()));
-                local_scope.insert(&Ident {name: name, namespace: vec![]},
-                                   ScopeItem::Var(raw_arg_name,
-                                                  typ.clone(), true));
-            } else {
+            // if already exists
+            if local_set.contains(&raw_arg_name.clone()) {
                 report_semantic_error(
                     &span, source_name, &source,
                     "Identifier redeclaration",
                     format!("Identifier `{}` is already declared in scope", name)
                 );
+                continue;
             }
+
+            local_set.insert(raw_arg_name.clone());
+            proc_args.push((raw_arg_name.clone(), typ.clone()));
+            local_scope.insert(&Ident {name: name, namespace: vec![]},
+                               ScopeItem::Var(raw_arg_name, typ.clone(), true));
         }
     }
 
@@ -271,7 +274,7 @@ fn process_proc_decl_body(
     let mut local_vars: Vec<(String, IRType)> = vec![];
     let mut body_ir: IRList = vec![];
 
-    // TODO: can probably be done better
+    // TODO: proc var declarations can probably be done better
     for decl in decls {
         match decl {
             ProcDeclBlock::Const(cdecls) => {
@@ -304,7 +307,7 @@ fn process_proc_decl_body(
                         }
 
 
-                        // Pre-compute initialization IR
+                        // compute initialization IR
                         let init_ir = match init_expr {
                             None => vec![default_irtype_val(&typ)],
                             Some(expr)
@@ -315,7 +318,7 @@ fn process_proc_decl_body(
                         local_scope.insert(&idnt,
                                            ScopeItem::Var(raw_name.clone(),
                                                           typ.clone(), true));
-                        // add local declaration
+                        // add local variable
                         local_vars.push((raw_name.clone(), typ.clone()));
 
                         // init local variable
@@ -330,7 +333,7 @@ fn process_proc_decl_body(
 
                         
     // body
-    // TODO: check if all paths return a value
+    // TODO: check if returns match proc signature
     for stmt in body {
         body_ir.extend(stmt2ir(&stmt, &local_scope, source_name,
                                &source, ret_type.clone()));

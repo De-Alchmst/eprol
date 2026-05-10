@@ -20,6 +20,7 @@ pub fn expr2ir<'a>(
 ) -> IRList {
     match expr {
         // LITERALS
+        // default to 64-bit values
         Expr::Lit(span, lit) => match lit {
             Literal::Int(x) => match expects {
                 IRType::Int | IRType::I64 | IRType::Any => vec![(IRType::I64, IR::LitInt(*x))],
@@ -50,9 +51,13 @@ pub fn expr2ir<'a>(
             }
 
             // TODO: handle strings like a normal person
+            // string defaults to I32 instead
             Literal::Str(s) => {
                 let s = s.to_string();
+
+                // register string to be inserted into data the section
                 get_data_set().lock().unwrap().insert(s.clone());
+
                 match expects {
                     IRType::Int | IRType::I32 | IRType::Any => vec![(IRType::I32, IR::LitStr(s.to_string()))],
                     IRType::I64 => vec![(IRType::I64, IR::LitStr(s))],
@@ -73,9 +78,11 @@ pub fn expr2ir<'a>(
             let mut inner_ir = expr2ir(inner, scope, expects, source_name, source);
             let inner_type   = irlist_type(&inner_ir);
             match op {
+                // TODO: perform NOT on comptime-known values
                 Unop::Not => inner_ir.push((inner_type, IR::Not)),
 
                 Unop::Neg => {
+                    // if literal, perform at comptime
                     if let Some(lit_val) = irlist2lit(&inner_ir) {
                         match lit_val {
                             LitVal::Int(x) => return vec![(IRType::Int, IR::LitInt(-x))],
@@ -84,6 +91,7 @@ pub fn expr2ir<'a>(
                         }
                     }
 
+                    // else insert IR
                     match inner_type.clone() {
                         IRType::Float | IRType::F32 | IRType::F64
                             => inner_ir.push((inner_type, IR::Neg)),
@@ -95,7 +103,7 @@ pub fn expr2ir<'a>(
                     }
                 }
             }
-            inner_ir
+            return inner_ir;
         }
 
         // IDENTS
@@ -110,7 +118,8 @@ pub fn expr2ir<'a>(
                     LitVal::Float(x)
                         => expr2ir(&Expr::Lit(PS, Literal::Float(*x)), scope,
                                    expects, source_name, source),
-                    // String constants not supported yet - would need owned strings in IR
+                    // String constants not supported yet
+                    // would need owned strings in IR
                     LitVal::Str(s)
                         => expr2ir(&Expr::Lit(PS, Literal::Str(s)), scope,
                                    expects, source_name, source),
@@ -136,7 +145,7 @@ pub fn expr2ir<'a>(
                     vec![(IRType::Error, IR::Error)]
                 }
 
-                // accessor -> cannot use accessors as values
+                // accessor -> cannot use accessors as values -> error
                 ScopeItem::Accessor(_, _) => {
                     report_semantic_error(
                         span, source_name, source,
@@ -162,9 +171,9 @@ pub fn expr2ir<'a>(
         // left side determines result type
         // therefor right must match left and the entire outcome must then
         // match expects
-        // TODO: do binop at compiletime with literals
+        // TODO: do binop at comptime with literals
         // TODO: add unsigned support for binops
-        // TODO: consider whether expressions should default to higher percision than `expects`
+        // TODO: consider whether binpo expressions should default to higher percision than `expects`
         Expr::Binop(span, op, left, right) => {
             // evaluate both sides
             let mut left_ir = expr2ir(left, scope, expects.clone(), // IRType::Any,
@@ -254,6 +263,7 @@ pub fn expr2ir<'a>(
 
         // ACCESSORS
         Expr::RawAccess(span, exp, access) => {
+            // AST to perform pointer arithmetic
             let offset_exp =
                 Expr::Binop(*span, Binop::Add,
                      exp.clone(), // already boxed
@@ -342,7 +352,7 @@ pub fn left_value2ir<'a>(
                     report_semantic_error(
                         span, source_name, source,
                         "Invalid left value",
-                        "Cannot assign to constants".to_string()
+                        "Cannot assign to a constant".to_string()
                     );
                     (vec![(IRType::Error, IR::Error)], IRType::Any)
                 }
@@ -380,6 +390,7 @@ pub fn left_value2ir<'a>(
         }
 
         LeftValue::RawAccess(span, exp, access) => {
+            // AST to perform pointer arithmetic
             let offset_exp =
                 Expr::Binop(*span, Binop::Add,
                      Box::new(exp.clone()),

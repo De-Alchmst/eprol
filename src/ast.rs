@@ -1,6 +1,6 @@
 use chumsky::span::SimpleSpan;
 
-// phony span
+// phony span, used for tests
 pub static PS: SimpleSpan = SimpleSpan { start: 0, end: 0, context: () };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -20,10 +20,11 @@ pub struct Accessor<'a> {
 pub enum Type {
     I32, I64,
     F32, F64,
-    I8,  I16, U8, U16, U32, U64,
     Void,
     // args, return
     Proc(Vec<Type>, Box<Type>),
+    // accessor types
+    I8,  I16, U8, U16, U32, U64,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -94,6 +95,7 @@ pub type ConstDeclBlock<'a> = Vec<(SimpleSpan, &'a str, Expr<'a>)>;
 
 // type, args
 pub type ProcArgs<'a> = (Type, Vec<(SimpleSpan, &'a str)>);
+
 #[derive(Debug, PartialEq)]
 pub enum ProcDeclBlock<'a> {
     Var(Vec<VarDeclBlock<'a>>),

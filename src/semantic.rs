@@ -18,24 +18,21 @@ use crate::{
     }
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::read_to_string
 };
 
 
-pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
+pub fn analyse_and_compile<'a>(source_name: &String) {
     let source = read_to_string(source_name).expect("Failed to read source file");
     let ast = parse_str_program(&source, source_name);
 
-    let output_files = HashSet::new();
+    if ast.len() == 0 { return }
+
     let mut scope = Scope {
         contents: HashMap::new(),
         namespaces: HashMap::new(),
     };
-
-    if ast.len() == 0 {
-        return output_files;
-    }
 
     // needs to process statements in specific order
     let mut imports_to_process:   Vec<TopLevel> = vec![];
@@ -44,7 +41,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let mut accessors_to_process: Vec<TopLevel> = vec![];
 
     // CONST processing
-    // and fill other lists for later processing
+    // and fill other lists for later use
     for top_level in ast {
         match top_level {
             TopLevel::Import(_, _, _, _) => imports_to_process.push(top_level),
@@ -70,7 +67,7 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
     let proc_ir = process_proc_decls(procs_to_process, &mut scope,
                                      source_name, &source);
 
-    // don't produce any code if errors found
+    // don't produce any code if found errors
     if !error_appeared() {
         print_wat_header();
         print_import_ir(&import_ir);
@@ -80,8 +77,6 @@ pub fn analyse_and_compile<'a>(source_name: &String) -> HashSet<&'a str> {
         print_top_level_ir(&proc_ir);
         print_wat_footer();
     }
-    
-    output_files
 }
 
 

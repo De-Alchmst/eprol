@@ -49,7 +49,7 @@ impl Scope {
     pub fn search(&self, ident: &Ident) -> ScopeItem {
         let mut current_scope = self;
 
-        // step through namespaces to find required scope, return Error if not found
+        // step through namespaces to find required scope, return None if not found
         for i in 0..ident.namespace.len() {
             match current_scope.namespaces.get(ident.namespace[i]) {
                 Some(ns) => {
@@ -58,11 +58,9 @@ impl Scope {
                 None => return ScopeItem::None
             }
         }
-        if let Some(var) = current_scope.contents.get(ident.name) {
-            var.clone()
-        } else {
-            ScopeItem::None
-        }
+        current_scope.contents
+            .get(ident.name)
+            .unwrap_or(&ScopeItem::None).clone()
     }
 
 
@@ -71,14 +69,12 @@ impl Scope {
 
         // step through namespaces to find required scope, create if not found
         for i in 0..ident.namespace.len() {
-            if !current_scope.namespaces.contains_key(ident.namespace[i]) {
-                current_scope.namespaces.insert(ident.namespace[i].to_string(), Scope {
-                    contents: HashMap::new(),
-                    namespaces: HashMap::new(),
-                });
-            }
-            current_scope = current_scope.namespaces.get_mut(ident.namespace[i])
-                                                    .unwrap();
+            current_scope = current_scope.namespaces
+                                .entry(ident.namespace[i].to_string())
+                                .or_insert(Scope {
+                                    contents: HashMap::new(),
+                                    namespaces: HashMap::new(),
+                                })
         }
         current_scope.contents.insert(ident.name.to_string(), item);
     }

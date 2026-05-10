@@ -64,10 +64,9 @@ pub fn parse_str_program<'a>(
     input: &'a str, source_name: &'a String
 ) -> Program<'a> {
     let token_iter = Token::lexer(input)
-        .spanned().map(|(tok, span)| match tok {
-            Ok(tok) => (tok, span.into()),
-            Err(()) => (Token::Error, span.into()),
-        });
+        .spanned().map(|(tok, span)| 
+            (tok.unwrap_or(Token::Error), span.into()));
+
     let token_stream = Stream::from_iter(token_iter)
         .map((0..input.len()).into(), |(t, s): (_, _)| (t, s));
 
@@ -76,14 +75,12 @@ pub fn parse_str_program<'a>(
         report_parser_error(error, source_name, input);
     }
 
-    match tokens {
-        Some(tokens) => tokens,
-        None => vec![],
-    }
+    tokens.unwrap_or(vec![])
 }
 
 
-
+// full identifier with namespaces and stuff
+// foo.bar.baz
 fn ident<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -100,6 +97,8 @@ where
 }
 
 
+// -1 as single number, not expression
+// use only when literal number is needed and expression is not acceptable
 fn possibly_negative_int<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, i64, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -114,6 +113,8 @@ where
 }
 
 
+// unnamed (raw) accessor, all possibilities
+// TODO: meybe don't require literal number for accessor offset_len?
 fn accessor<'tokens, 'src: 'tokens, I, P>(
     exp: P,
 ) -> impl Parser<'tokens, I, Accessor<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
@@ -166,6 +167,7 @@ fn expr<'tokens, 'src: 'tokens, I>(
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
+    // sooner defined = higher precedence
     recursive(|exp| {
         let end_node = choice((
             // LITERAL
@@ -198,8 +200,6 @@ where
             ident().map_with(|i, e|
                 Expr::Ident(if !cfg!(test) {e.span()} else {PS}, i)),
         )).boxed();
-
-        // TODO: determine if raw or named access should have precedence
 
         let named_access =
             ident().then_ignore(just(Token::Pipe)).repeated()
@@ -269,7 +269,7 @@ where
                 Box::new(lhs), Box::new(rhs))
         );
 
-        // TODO: handle types as garbage terminators...
+        // TODO: handle types as expression garbage terminators...
         let expr_garbage =
             none_of([
                 Token::Semicolon, Token::End, Token::Comma, Token::Do,
@@ -280,7 +280,7 @@ where
             .repeated()
             .at_least(1);
 
-        // Malform expression
+        // Malformed expression
         // might start with matching a valid expression
         // for example in `abc def + 42`, `abc` is a valid expression, but it's not
         // as a whole
@@ -311,6 +311,7 @@ where
 }
 
 
+// left side of assignment
 fn left_value<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, LeftValue<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -399,7 +400,7 @@ where
     ))
 }
 
-
+// vector of statements, part of a block
 fn stmt_vect<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<Stmt<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -416,6 +417,7 @@ where
 }
 
 
+// types including accessor-only types
 fn access_type<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -437,6 +439,7 @@ where
 }
 
 
+// variable-only types
 fn simple_type<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -458,6 +461,7 @@ where
 }
 
 
+// types that can be imported: simple_type or procedure
 fn import_type<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Type, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -492,6 +496,8 @@ where
 }
 
 
+// namespace part of declaration
+// : foo.bar
 fn declare_namespace<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<&'src str>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -516,6 +522,7 @@ where
 }
 
 
+// identifier with optional namespace declaration part, such as for procedures
 fn name_optional_namespace_declare<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Ident<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -535,6 +542,7 @@ where
 }
 
 
+// full body of a VAR declaration
 fn var_decl_body<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<VarDeclBlock<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -568,6 +576,7 @@ where
 }
 
 
+// full body of a CONST declaration
 fn const_decl_body<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, ConstDeclBlock<'src>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -584,6 +593,7 @@ where
 }
 
 
+// EXPORT declaration, or nothing
 fn optional_export<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Option<&'src str>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -598,6 +608,7 @@ where
 }
 
 
+// procedure arguments
 fn proc_args_decl<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<ProcArgs<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -620,6 +631,7 @@ where
 }
 
 
+// procedure local VAR and CONST
 fn proc_decl_blocks<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, Vec<ProcDeclBlock<'src>>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -647,6 +659,7 @@ where
 }
 
 
+// any top level statement
 fn top_level<'tokens, 'src: 'tokens, I>(
 ) -> impl Parser<'tokens, I, TopLevel<'tokens>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
@@ -723,14 +736,6 @@ where
     top_level().repeated().collect::<Vec<_>>()
 }
 
-
-// fn parser<'tokens, 'src: 'tokens, I>(
-// ) -> impl Parser<'tokens, I, Program, extra::Err<Rich<'tokens, Token<'src>>>>
-// where
-//     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
-// {
-//     recursive(||)
-// }
 
 #[cfg(test)]
 mod tests {
